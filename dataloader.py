@@ -27,20 +27,28 @@ class CustomDataset(Dataset):
         # Construct the path of the .h5 file
         # Assuming the structure is '{dataset_name}/ds{6digits}/sub-{participant_id}'
         study = self.data_info.iloc[idx]['study']  # e.g. 'AOMIC/ds002785'
-        h5_path = os.path.join(self.root_dir, study, 'sub-' + str(participant_id))
+        h5_path = os.path.join(self.root_dir, study,
+                               str(participant_id))  # e.g. 'data/preprocessed/AOMIC/ds002785/sub-0001'
+        h5_path = h5_path + f'/{participant_id}_T1w.h5'  # e.g. 'data/preprocessed/AOMIC/ds002785/sub-0001/sub-0001_T1w.h5'
 
         # Load the .h5 file
+        sample = {'h5_data': 0, 'age': age, 'root_dir': self.root_dir, 'study': study,
+                  'participant_id': participant_id}
         try:
+
             with h5py.File(h5_path, 'r') as f:
-                h5_data = f['preprocessed_volume'][:]
-            sample = {'h5_data': h5_data, 'age': age}
+                sample['h5_data'] = f['preprocessed_volume'][:]
+
             return sample
         except:  # TODO: specify the exception
-            print('File not found, load useless f for further check: ' + h5_path)
-            with h5py.File('data/preprocessed/AOMIC/ds002785/sub-0001/sub-0001_T1w.h5', 'r') as f:
-                h5_data = f['preprocessed_volume'][:]
-            sample = {'h5_data': h5_data, 'age': age}
+            print('File not found, load useless f for further check.' + h5_path)
+            sample['age'] = -1  # set flag for further check in label_BAG.py
+            sample['h5_data'] = torch.full((160, 192, 160), -1)  # dummy tensor
             return sample
+            # with h5py.File('data/preprocessed/AOMIC/ds002785/sub-0001/sub-0001_T1w.h5', 'r') as f:
+            #     h5_data = f['preprocessed_volume'][:]
+            # sample = {'h5_data': h5_data, 'age': age, 'root_dir': self.root_dir, 'study': study,
+            #           'participant_id': participant_id}
 
 
 if __name__ == '__main__':
@@ -49,3 +57,5 @@ if __name__ == '__main__':
     dataloader_iter = iter(dataloader)
     sample = next(dataloader_iter)
     assert sample['h5_data'].shape == (4, 160, 192, 160)
+    print(sample['age'])
+    print(sample['participant_id'])
