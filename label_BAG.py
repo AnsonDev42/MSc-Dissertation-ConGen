@@ -57,6 +57,7 @@ def label_writer(filename='brain_age_info.csv', gpu=False):
             else:
                 # writer.writerow([participant_id, -1, -1])
                 ...
+    print("brain age info file written")
 
 
 def sfcn_loader(gpu=False):
@@ -92,7 +93,7 @@ def infer_sample_h5(h5_data, age, model):
     # print(f'Label shape: {y.shape}') # torch.Size([1, 40])
 
     # Preprocessing
-    data = data / data.mean()
+    # data = data / data.mean()
     # data = dpu.crop_center(data, (160, 192, 160))
     print(f'Input data shape: {data.shape}')
     # Move the data from numpy to torch tensor on GPU
