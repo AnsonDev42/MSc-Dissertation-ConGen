@@ -21,13 +21,13 @@ def label_writer(filename='brain_age_info.csv', gpu=False):
         # create a new file if not exist, else ask for overwrite
         with open(filename, 'x') as csvfile:
             writer = csv.writer(csvfile)
-            writer.writerow(['participant_id', 'age', 'brain_age'])
+            writer.writerow(['study', 'participant_id', 'age', 'brain_age', 'status'])
     except FileExistsError:
         # ask for overwrite
         if input("press 'y' or 'yes' to overwrite the brain age info file") in ['y', 'yes', 'Y', 'Yes', 'YES']:
             with open(filename, 'w') as csvfile:
                 writer = csv.writer(csvfile)
-                writer.writerow(['participant_id', 'age', 'brain_age'])
+                writer.writerow(['study', 'participant_id', 'age', 'brain_age', 'status'])
         else:
             print("brain age info file not overwritten")
             exit(0)
@@ -45,15 +45,16 @@ def label_writer(filename='brain_age_info.csv', gpu=False):
             study = sample['study'][0]
             participant_id = sample['participant_id'][0]
             age = sample['age'][0]
+            status = sample['status'][0]
 
             if age != -1:
                 # get the brain age by infer in sfcn
                 brain_age = infer_sample_h5(sample['h5_data'][0], age, model)  # set [0] since batch is 1
                 age_value = age.item()
                 # write the info to the file
-                writer.writerow([study, participant_id, age_value, brain_age])
-                print("study: {}, participant_id: {}, age: {}, brain_age: {}".format(study, participant_id, age_value,
-                                                                                     brain_age))
+                writer.writerow([study, participant_id, age_value, brain_age, status])
+                print(f"study: {study}, participant_id: {participant_id}, age: {age_value}, brain_age: {brain_age}, "
+                      f"status: {status}")
             else:
                 # writer.writerow([participant_id, -1, -1])
                 ...
@@ -135,6 +136,9 @@ def visualize_output(x, y, bc):
 
     plt.show()
 
+
+from sklearn.linear_model import LinearRegression
+from sklearn.metrics import mean_squared_error
 
 if __name__ == '__main__':
     # random seed
