@@ -96,10 +96,24 @@ def bias_correction(y: np.ndarray, y_pred: np.ndarray):
     return y_pred_unbiased
 
 
-if __name__ == '__main__':
-    # linear_bias_correction()
+def bias_correction_writer():
+    """
+    given the ground truth and the predicted brain age, write the bias corrected brain age to a csv file,
+    with the aged percentage of the true age
+    :param y: true age
+    :param y_pred: predicted brain age without bias correction
+    :return: predicted brain age with bias correction and the aged percentage of the true age
+    """
+
     df = pd.read_csv('brain_age_info.csv')
     y_pred = df['brain_age'].to_numpy()
     y_actual = df['age'].to_numpy()
     y_pred_unbiased = bias_correction(y_actual, y_pred)
-    print(y_pred_unbiased)
+    df['brain_age_unbiased'] = y_pred_unbiased
+    df['aged_percentage'] = y_pred_unbiased / y_actual
+    df.to_csv('brain_age_info.csv', index=False)
+
+
+if __name__ == '__main__':
+    # linear_bias_correction()
+    bias_correction_writer()
