@@ -61,7 +61,7 @@ def label_writer(filename='brain_age_info.csv', gpu=False):
     print("brain age info file written")
 
 
-def sfcn_loader(gpu=False):
+def sfcn_loader(gpu=False, eval=True, weights='./brain_age/run_20190719_00_epoch_best_mae.p'):
     """
     load the sfcn model from han's code/weight and return the model
     :param gpu: use torch gpu or not
@@ -70,11 +70,11 @@ def sfcn_loader(gpu=False):
     if not gpu:
         model = SFCN()
         model = torch.nn.DataParallel(model)
-        fp_ = './brain_age/run_20190719_00_epoch_best_mae.p'
-        model.load_state_dict(torch.load(fp_, map_location='cpu'))
+        if eval:
+            model.eval()
+            model.load_state_dict(torch.load(weights, map_location='cpu'))
     else:
         raise NotImplementedError("This function is not implemented yet.")
-    model.eval()
     return model
 
 
@@ -82,7 +82,6 @@ def infer_sample_h5(h5_data, age, model):
     # Example
 
     # Example data: some random brain in the MNI152 1mm std space
-    sfcn_loader()
     data = np.array(h5_data)
     label = np.array([age, ])  # Assuming the random subject is 71.3-year-old.
     # Transforming the age to soft label (probability distribution)
@@ -100,6 +99,8 @@ def infer_sample_h5(h5_data, age, model):
     # Move the data from numpy to torch tensor on GPU
     sp = (1, 1) + data.shape
     data = data.reshape(sp)
+    print(f'Final Input data shape: {data.shape}')
+
     input_data = torch.tensor(data, dtype=torch.float32)
     # print(f'Input data shape: {input_data.shape}')
     # print(f'dtype: {input_data.dtype}')
@@ -133,12 +134,58 @@ def visualize_output(x, y, bc):
     plt.subplot(1, 2, 2)
     plt.bar(bc, prob)
     plt.title(f'Prediction: age={pred:.2f}\n')
-
     plt.show()
 
 
-from sklearn.linear_model import LinearRegression
-from sklearn.metrics import mean_squared_error
+def label_writer_batch(filename='brain_age_info.csv', gpu=False):
+    """
+    write the data path, participants ID,  age, brain age
+    :return:
+    """
+    try:
+        # create a new file if not exist, else ask for overwrite
+        with open(filename, 'x') as csvfile:
+            writer = csv.writer(csvfile)
+            writer.writerow(['study', 'participant_id', 'age', 'brain_age', 'status'])
+    except FileExistsError:
+        # ask for overwrite
+        if input("press 'y' or 'yes' to overwrite the brain age info file") in ['y', 'yes', 'Y', 'Yes', 'YES']:
+            with open(filename, 'w') as csvfile:
+                writer = csv.writer(csvfile)
+                writer.writerow(['study', 'participant_id', 'age', 'brain_age', 'status'])
+        else:
+            print("brain age info file not overwritten")
+            exit(0)
+    # load the mdoel
+    model = sfcn_loader(gpu=gpu)
+    # load the dataset
+    dataset = CustomDataset(root_dir='data/preprocessed', csv_file='data/clinical_data.csv')
+    dataloader = DataLoader(dataset, batch_size=1, shuffle=False, num_workers=4)
+    # iterate through the dataset
+    dataloader_iter = iter(dataloader)
+    with open(filename, 'a') as csvfile:
+        writer = csv.writer(csvfile)
+        for i in range(len(dataloader)):
+            sample = next(dataloader_iter)
+            study = sample['study'][0]
+            participant_id = sample['participant_id'][0]
+            age = sample['age'][0]
+            status = sample['status'][0]
+
+            if age != -1:
+                # get the brain age by infer in sfcn
+                print("before ")
+                brain_age = infer_sample_h5(sample['h5_data'][0], age, model)  # set [0] since batch is 1
+                age_value = age.item()
+                # write the info to the file
+                writer.writerow([study, participant_id, age_value, brain_age, status])
+                print(f"study: {study}, participant_id: {participant_id}, age: {age_value}, brain_age: {brain_age}, "
+                      f"status: {status}")
+            else:
+                # writer.writerow([participant_id, -1, -1])
+                ...
+    print("brain age info file written")
+
 
 if __name__ == '__main__':
     # random seed
