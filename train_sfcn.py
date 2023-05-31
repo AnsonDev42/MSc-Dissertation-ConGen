@@ -59,10 +59,9 @@ def train_sfcn():
             # output_tensor = output_tensor.reshape([batch_size, -1])
             # use it in the loss computation
             loss = dpl.my_KLDivLoss(output_tensor, labels)
-
             # outputs_shaped = outputs.reshape([batch_size, -1])
             # x = outputs.reshape([batch_size, -1])
-            loss = dpl.my_KLDivLoss(outputs, labels).numpy()
+            # loss = dpl.my_KLDivLoss(outputs, labels).numpy()
             loss.backward()
             optimizer.step()
         scheduler.step()
