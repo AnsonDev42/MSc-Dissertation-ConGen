@@ -18,9 +18,7 @@ class DenseLayers(nn.Module):
     def __init__(self, dims, activation_fn=nn.ReLU()):
         super(DenseLayers, self).__init__()
         # Create a list of layers e.g. dims=[2, 3, 4] -> [nn.Linear(2, 3), nn.Linear(3, 4)]
-        # self.layers = nn.ModuleList([nn.Linear(dim_in, dim_out) for dim_in, dim_out in zip(dims, dims[1:])])
-        self.layers = nn.ModuleList([nn.Linear(input_dim, output_dim, bias=False) for input_dim, output_dim in
-                                     zip(dims[:-1], dims[1:])])
+        self.layers = nn.ModuleList([nn.Linear(dim_in, dim_out) for dim_in, dim_out in zip(dims, dims[1:])])
         self.activation_fn = activation_fn
 
     def forward(self, x):
@@ -33,7 +31,7 @@ class Encoder(nn.Module):
     def __init__(self, input_dim, intermediate_dim, latent_dim):
         super(Encoder, self).__init__()
         # hidden layers
-        self.z_h_layers = DenseLayers([input_dim] + intermediate_dim)  # line143 in vae_utils.py
+        self.z_h_layers = DenseLayers(input_dim + intermediate_dim)  # line143 in vae_utils.py
         self.z_mean_layer = nn.Linear(intermediate_dim[-1], latent_dim)
         self.z_log_var_layer = nn.Linear(intermediate_dim[-1], latent_dim)
         self.sampler = Sampler()
@@ -58,8 +56,7 @@ class Decoder(nn.Module):
 class ContrastiveVAE(nn.Module):
     def __init__(self, input_dim, intermediate_dim, latent_dim, beta=1, disentangle=False, gamma=0):
         super(ContrastiveVAE, self).__init__()
-        # add input layer before encoder
-        self.input_layer = nn.Linear(input_dim, input_dim)
+
         if isinstance(intermediate_dim, int):
             intermediate_dim = [intermediate_dim]
         self.z_encoder = Encoder(input_dim, intermediate_dim, latent_dim)
@@ -103,6 +100,7 @@ class ContrastiveVAE(nn.Module):
             tc_loss = torch.log(q_score / (1 - q_score))
             discriminator_loss = -torch.log(q_score) - torch.log(1 - q_bar_score)
             # the reconstruction_loss is not complete, need to add when training
+            # REMEMBER to replace bg_s to bg_z from the example code
             return (
                 tg_outputs, bg_outputs,
                 tg_z_mean, tg_z_log_var,
@@ -111,3 +109,29 @@ class ContrastiveVAE(nn.Module):
                 tc_loss, discriminator_loss)
         else:
             return tg_outputs, bg_outputs, tg_z_mean, tg_z_log_var, tg_s_mean, tg_s_log_var, bg_z_mean, bg_z_log_var
+
+
+def cvae_loss(original_dim,
+              tg_inputs, bg_inputs, tg_outputs, bg_outputs, 
+             tg_z_mean, tg_z_log_var, 
+             tg_s_mean, tg_s_log_var, 
+             bg_z_mean, bg_z_log_var, 
+            beta=1.0, disentangle=False, gamma=0.0):
+
+    # Reconstruction Loss
+    reconstruction_loss = nn.MSELoss(reduction="none")
+    tg_reconstruction_loss = reconstruction_loss(tg_inputs, tg_outputs).view(tg_inputs.size(0), -1).sum(dim=1)
+    bg_reconstruction_loss = reconstruction_loss(bg_inputs, bg_outputs).view(bg_inputs.size(0), -1).sum(dim=1)
+    reconstruction_loss = (tg_reconstruction_loss + bg_reconstruction_loss).mean() * original_dim
+
+    # KL Loss
+    kl_loss = 1 + tg_z_log_var - tg_z_mean.pow(2) - tg_z_log_var.exp()
+    kl_loss += 1 + tg_s_log_var - tg_s_mean.pow(2) - tg_s_log_var.exp()
+    kl_loss += 1 + bg_z_log_var - bg_z_mean.pow(2) - bg_z_log_var.exp()
+    kl_loss = kl_loss.sum(dim=-1) * -0.5
+    if disentangle:
+        cvae_loss = reconstruction_loss.mean() + beta * kl_loss.mean() + gamma * tc_loss + discriminator_loss
+    else:
+        cvae_loss = reconstruction_loss.mean() + beta * kl_loss.mean()
+
+    return cvae_loss
