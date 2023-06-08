@@ -13,6 +13,7 @@ batch_size = 32
 # Instantiate the model
 input_dim = 784
 intermediate_dim = 256
+
 latent_dim = 2
 beta = 1
 disentangle = True

@@ -31,7 +31,7 @@ class Encoder(nn.Module):
     def __init__(self, input_dim, intermediate_dim, latent_dim):
         super(Encoder, self).__init__()
         # hidden layers
-        self.z_h_layers = DenseLayers(input_dim + intermediate_dim)  # line143 in vae_utils.py
+        self.z_h_layers = DenseLayers([input_dim] + intermediate_dim)  # line143 in vae_utils.py
         self.z_mean_layer = nn.Linear(intermediate_dim[-1], latent_dim)
         self.z_log_var_layer = nn.Linear(intermediate_dim[-1], latent_dim)
         self.sampler = Sampler()
@@ -116,7 +116,7 @@ def cvae_loss(original_dim,
              tg_z_mean, tg_z_log_var, 
              tg_s_mean, tg_s_log_var, 
              bg_z_mean, bg_z_log_var, 
-            beta=1.0, disentangle=False, gamma=0.0):
+            beta=1.0, disentangle=False, gamma=0.0,tc_loss=None, discriminator_loss=None):
 
     # Reconstruction Loss
     reconstruction_loss = nn.MSELoss(reduction="none")
@@ -135,3 +135,4 @@ def cvae_loss(original_dim,
         cvae_loss = reconstruction_loss.mean() + beta * kl_loss.mean()
 
     return cvae_loss
+
