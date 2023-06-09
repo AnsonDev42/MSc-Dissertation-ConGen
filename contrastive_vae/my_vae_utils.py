@@ -45,7 +45,7 @@ class Encoder(nn.Module):
 
         # hidden layers
         # self.z_h_layers = DenseLayers([input_shape, intermediate_dim])  # line143 in vae_utils.py
-        self.z_h_layers= nn.Linear(9830400, intermediate_dim)
+        self.z_h_layers= nn.Linear(10543232, intermediate_dim) 
         self.z_mean_layer = nn.Linear(intermediate_dim, latent_dim)
         self.z_log_var_layer = nn.Linear(intermediate_dim, latent_dim)
         self.sampler = Sampler()
@@ -87,24 +87,27 @@ class Decoder(nn.Module):
                                          out_channels=self.filters,
                                          kernel_size=self.kernel_size,
                                          stride=2,
-                                         padding=1,
+                                         padding=0,
+                                         output_padding=1,
                                          bias=bias))
         for i in range(1, nlayers):
             layers.append(nn.ConvTranspose3d(in_channels=self.filters,
-                                             out_channels=self.filters//2,
+                                             out_channels=self.filters//4,
                                              kernel_size=self.kernel_size,
                                              stride=2,
-                                             padding=1,
+                                             padding=0,
+                                             output_padding=1,
                                              bias=bias))
             layers.append(nn.ReLU(inplace=True))
-            self.filters //= 2
+            self.filters //= 4
         self.convlayers = nn.Sequential(*layers)
         self.output_3dT = nn.ConvTranspose3d(in_channels=self.filters,
-                                         out_channels=self.filters,
+                                         out_channels=1,
                                          kernel_size=self.kernel_size,
                                          stride=1,
-                                         padding=1,
-                                         bias=bias)
+                                         padding=2,
+                                         bias=bias
+                                         )
         self.sigmoid = nn.Sigmoid() 
         
   
@@ -119,15 +122,15 @@ class Decoder(nn.Module):
         return x
 
 # tg_inputs = torch.randn(4,1)
-# decoder= Decoder(latent_dim=2, intermediate_dim=128,z_shape=[1, 128, 40, 48, 40], output_dim=9830400,filters=32,kernel_size=3,nlayers=2, bias=True)
+# decoder= Decoder(latent_dim=2, intermediate_dim=128,z_shape=[1, 128, 40, 48, 40], output_dim=9830400,filters=32,kernel_size=2,nlayers=2, bias=True)
 # res = decoder(tg_inputs)
-
+# print(f"decoder result: shape of x is {res.shape}") # decoder: shape of x is torch.Size([4, 1, 160, 192, 160])
 
 class ContrastiveVAE(nn.Module):
     def __init__(self, input_shape=(1,160,192,160), intermediate_dim=128, latent_dim=2, beta=1, disentangle=False, gamma=1, bias=True, batch_size=64):
         super(ContrastiveVAE, self).__init__()
         # image_size, _, _, channels = input_shape
-        kernel_size = 3
+        kernel_size = 2 # 3 to 2
         filters = 32
         nlayers = 2
         self.z_encoder = Encoder(input_shape, intermediate_dim, latent_dim,filters, kernel_size, bias=bias)
@@ -136,9 +139,10 @@ class ContrastiveVAE(nn.Module):
         if input_shape == (1,160,192,160):
             self.z_shape =  [128, 40, 48, 40]
         else:
-            res = self.z_encoder(torch.randn(*input_shape))
-            self.z_shape = res[3]
-            print(f"z_shape set to unverified {self.z_shape}")
+            raise NotImplementedError( "for now encoder is using hardcoded product of z_shape")
+            # res = self.z_encoder(torch.randn(*input_shape))
+            # self.z_shape = res[3]
+            # print(f"z_shape set to unverified {self.z_shape}")
         self.decoder = Decoder(latent_dim, intermediate_dim,self.z_shape,output_dim=input_shape,filters=filters,kernel_size= kernel_size, nlayers = nlayers, bias=bias)
         self.disentangle = disentangle
         self.beta = beta
