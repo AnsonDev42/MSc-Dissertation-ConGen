@@ -42,14 +42,16 @@ def load_cached_filenames(csv_path=False):
 
 def create_depression_csv():
     # check if major_depression.csv exists, if not create
-    if os.path.exists('major_depression.csv'):
-        print("already exists major_depression.csv...")
+    if os.path.exists('Touchscreen.csv'):
+        print("already exists touch_screen.csv...")
     else:
-        md_data = pyreadr.read_r('2021-04-phenotypes-ukb44797/Touchscreen.rds')
-        print(md_data.keys())
-        md_df = md_data[None]
-        md_df.to_csv('major_depression.csv', index=False)
-    md_df = pd.read_csv('major_depression.csv', sep=',')
+        # this package can not load the specific rds, have to convert to csv in Rstudio
+        ts_data = pyreadr.read_r('2021-04-phenotypes-ukb44797/Touchscreen.rds')
+        print(ts_data.keys())
+        ts_data = ts_data[None]
+        ts_data.to_csv('touch_screen.csv', index=False)
+    ts_data = pd.read_csv('Touchscreen.csv', sep=',')
+    md_df = ts_data[ts_data['f.20125.0.0'] == 1]
     return md_df
 
 
@@ -58,15 +60,22 @@ def filter_depression(curr_df=None):
     # Data-Field 20125 Description:	Probable recurrent major depression (severe)
     # https://biobank.ctsu.ox.ac.uk/crystal/field.cgi?id=20125
     """
-    md_df = create_depression_csv()
-    # data_field = '20125'  # Probable recurrent major depression (severe)
-    # df = load_cached_filenames(create_csv=False)
-    filtered = pd.merge(md_df, curr_df, left_on='f.eid', right_on='subjectID', how='inner')
+    # md_df = create_depression_csv()
+    ts_data = pd.read_csv('Touchscreen_20126md.csv', sep=',')
+    filtered = pd.merge(ts_data, curr_df, left_on='f.eid', right_on='subjectID', how='inner')
+
+    values = ['Probable Recurrent major depression (moderate)',
+              'Probable Recurrent major depression (severe)']
+
+    filtered = filtered[filtered['f.20126.0.0'].isin(values)]
+
     return filtered
 
 
 if __name__ == '__main__':
+    # print(len(create_depression_csv()))
     # load_cached_filenames(create_csv=True)
     curr_df = create_cached_t1_filenames(create_csv=False)
     filtered_df = filter_depression(curr_df=curr_df)
+    print(len(filtered_df))
     print(filtered_df.head())
