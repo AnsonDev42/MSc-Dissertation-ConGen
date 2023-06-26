@@ -55,27 +55,84 @@ def create_depression_csv():
     return md_df
 
 
+def map_20126_str_to_int():
+    """
+    convert the string to int
+        0 No Bipolar or Depression
+        1 Bipolar I Disorder
+        2 Bipolar II Disorder
+        3 Probable Recurrent major depression (severe)
+        4 Probable Recurrent major depression (moderate)
+        5 Single Probable major depression episode
+
+    :return: mapped csv
+    """
+
+    ts_data = pd.read_csv('Touchscreen_20126md.csv', sep=',')
+    print(ts_data.head())
+    print(ts_data['f.20126.0.0'].unique())
+    # convert
+    ts_data['f.20126.0.0'] = ts_data['f.20126.0.0'].apply(lambda x: 0 if x == 'No Bipolar or Depression' else x)
+    ts_data['f.20126.0.0'] = ts_data['f.20126.0.0'].apply(lambda x: 1 if x == 'Bipolar I Disorder' else x)
+    ts_data['f.20126.0.0'] = ts_data['f.20126.0.0'].apply(lambda x: 2 if x == 'Bipolar II Disorder' else x)
+    ts_data['f.20126.0.0'] = ts_data['f.20126.0.0'].apply(
+        lambda x: 3 if x == 'Probable Recurrent major depression (severe)' else x)
+    ts_data['f.20126.0.0'] = ts_data['f.20126.0.0'].apply(
+        lambda x: 4 if x == 'Probable Recurrent major depression (moderate)' else x)
+    ts_data['f.20126.0.0'] = ts_data['f.20126.0.0'].apply(
+        lambda x: 5 if x == 'Single Probable major depression episode' else x)
+
+    ts_data.to_csv('Touchscreen_20126md_int.csv', index=False)
+    return ts_data
+
+
 def filter_depression(curr_df=None):
     """
     # Data-Field 20125 Description:	Probable recurrent major depression (severe)
     # https://biobank.ctsu.ox.ac.uk/crystal/field.cgi?id=20125
     """
     # md_df = create_depression_csv()
-    ts_data = pd.read_csv('Touchscreen_20126md.csv', sep=',')
-    filtered = pd.merge(ts_data, curr_df, left_on='f.eid', right_on='subjectID', how='inner')
+    ts_data = pd.read_csv('Touchscreen_20126md_int.csv', sep=',')
+    # all = pd.merge(ts_data, curr_df, left_on='f.eid', right_on='subjectID', how='inner')
+    print('before merge, all the keys in Touchscreen_20126md_int')
+    print(f'length of ts_data {len(ts_data)}')
+    print(ts_data['f.20126.0.0'].value_counts().sort_index())
+    if curr_df is None:
+        return ts_data
+    else:
 
-    values = ['Probable Recurrent major depression (moderate)',
-              'Probable Recurrent major depression (severe)']
+        filtered = pd.merge(ts_data, curr_df, left_on='f.eid', right_on='subjectID', how='inner')
+        print('after inner merge...')
+        print(filtered['f.20126.0.0'].value_counts().sort_index())
 
-    filtered = filtered[filtered['f.20126.0.0'].isin(values)]
+        # Define a dictionary to map index to description
+        index_description = {
+            0.0: 'No Bipolar or Depression',
+            1.0: 'Bipolar I Disorder',
+            2.0: 'Bipolar I Disorder',
+            3.0: 'Probable Recurrent major depression (severe)',
+            4.0: 'Probable Recurrent major depression (moderate)',
+            5.0: 'Single Probable major depression episode'
+        }
 
-    return filtered
+        # Get the value counts
+        value_counts = ts_data['f.20126.0.0'].value_counts().rename('count').reset_index().rename(
+            columns={'index': 'index_value'})
+
+        # Add the description column using the map function
+        value_counts['description'] = value_counts['index_value'].map(index_description)
+
+        # Print the value counts with descriptions
+        print(value_counts)
+
+        return filtered
 
 
 if __name__ == '__main__':
-    # print(len(create_depression_csv()))
-    # load_cached_filenames(create_csv=True)
+    # map_20126_str_to_int()
+    # depression = filter_depression()
+    # exit()
     curr_df = create_cached_t1_filenames(create_csv=False)
     filtered_df = filter_depression(curr_df=curr_df)
-    print(len(filtered_df))
-    print(filtered_df.head())
+    # print(len(filtered_df))
+    # print(filtered_df.head())
