@@ -100,7 +100,9 @@ def filter_depression(curr_df=None):
     if curr_df is None:
         return ts_data
     else:
-
+        # filtered = ts_data
+        # print(f'ts_data{ts_data.keys()}')
+        # print(f'curr_df{curr_df.keys()}')
         filtered = pd.merge(ts_data, curr_df, left_on='f.eid', right_on='subjectID', how='inner')
         print('after inner merge...')
         print(filtered['f.20126.0.0'].value_counts().sort_index())
@@ -116,7 +118,7 @@ def filter_depression(curr_df=None):
         }
 
         # Get the value counts
-        value_counts = ts_data['f.20126.0.0'].value_counts().rename('count').reset_index().rename(
+        value_counts = filtered['f.20126.0.0'].value_counts().rename('count').reset_index().rename(
             columns={'index': 'index_value'})
 
         # Add the description column using the map function
