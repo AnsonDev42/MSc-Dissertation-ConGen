@@ -28,7 +28,11 @@ def create_cached_t1_filenames(create_csv=False):
         df.to_csv('t1_structural_nifti_20252_filenames.csv', index=False)
 
     # read csv file
-    df = pd.read_csv('t1_structural_nifti_20252_filenames.csv', sep=',')
+    try:
+        df = pd.read_csv('t1_structural_nifti_20252_filenames.csv', sep=',')
+    except FileNotFoundError:
+        print("no processed csv file found... check filter_data.py for more.")
+        return None
     return df
 
 
@@ -86,7 +90,7 @@ def map_20126_str_to_int():
     return ts_data
 
 
-def filter_depression(curr_df=None):
+def filter_depression(curr_df=None, create_csv=False):
     """
     # Data-Field 20125 Description:	Probable recurrent major depression (severe)
     # https://biobank.ctsu.ox.ac.uk/crystal/field.cgi?id=20125
@@ -96,7 +100,8 @@ def filter_depression(curr_df=None):
     # all = pd.merge(ts_data, curr_df, left_on='f.eid', right_on='subjectID', how='inner')
     print('before merge, all the keys in Touchscreen_20126md_int')
     print(f'length of ts_data {len(ts_data)}')
-    print(ts_data['f.20126.0.0'].value_counts().sort_index())
+    ts_data_counts = ts_data
+    print(ts_data_counts['f.20126.0.0'].value_counts().sort_index())
     if curr_df is None:
         return ts_data
     else:
@@ -105,7 +110,7 @@ def filter_depression(curr_df=None):
         # print(f'curr_df{curr_df.keys()}')
         filtered = pd.merge(ts_data, curr_df, left_on='f.eid', right_on='subjectID', how='inner')
         print('after inner merge...')
-        print(filtered['f.20126.0.0'].value_counts().sort_index())
+        # print(filtered['f.20126.0.0'].value_counts().sort_index())
 
         # Define a dictionary to map index to description
         index_description = {
@@ -116,9 +121,9 @@ def filter_depression(curr_df=None):
             4.0: 'Probable Recurrent major depression (moderate)',
             5.0: 'Single Probable major depression episode'
         }
-
+        value_counts = filtered
         # Get the value counts
-        value_counts = filtered['f.20126.0.0'].value_counts().rename('count').reset_index().rename(
+        value_counts = value_counts['f.20126.0.0'].value_counts().rename('count').reset_index().rename(
             columns={'index': 'index_value'})
 
         # Add the description column using the map function
@@ -126,7 +131,7 @@ def filter_depression(curr_df=None):
 
         # Print the value counts with descriptions
         print(value_counts)
-
+        filtered.to_csv('filtered_depression.csv', index=False)
         return filtered
 
 
@@ -135,6 +140,7 @@ if __name__ == '__main__':
     # depression = filter_depression()
     # exit()
     curr_df = create_cached_t1_filenames(create_csv=False)
-    filtered_df = filter_depression(curr_df=curr_df)
-    # print(len(filtered_df))
-    # print(filtered_df.head())
+    filtered_df = filter_depression(curr_df=curr_df, create_csv=True)
+
+    print(len(filtered_df))
+    print(filtered_df.head(5).keys())
