@@ -11,8 +11,11 @@ import h5py
 class CustomDataset(Dataset):
     def __init__(self, root_dir, csv_file):
         self.root_dir = root_dir
+        self.data_info = self.load_data_info(root_dir, csv_file)
+
+    def load_data_info(self, root_dir, csv_file):
         data_info = pd.read_csv(csv_file)
-        self.data_info = data_info[data_info.apply(lambda row: os.path.exists(self._get_h5_path(row)), axis=1)]
+        return data_info[data_info.apply(lambda row: os.path.exists(self._get_h5_path(row)), axis=1)]
 
     def __len__(self):
         return len(self.data_info)
@@ -23,6 +26,13 @@ class CustomDataset(Dataset):
         h5_path = os.path.join(self.root_dir, study, str(participant_id))
         h5_path = h5_path + f'/{participant_id}_T1w.h5'
         return h5_path
+
+    def _get_compressed_path(self, row):
+        participant_id = row['participant_id']
+        study = row['study']
+        compressed_path = os.path.join(self.root_dir, study, str(participant_id))
+        compressed_path = compressed_path + f'/{participant_id}_T1w.zip'
+        return compressed_path
 
     def __getitem__(self, idx):
         if torch.is_tensor(idx):
@@ -58,6 +68,39 @@ class CustomDataset(Dataset):
             #     h5_data = f['preprocessed_volume'][:]
             # sample = {'h5_data': h5_data, 'age': age, 'root_dir': self.root_dir, 'study': study,
             #           'participant_id': participant_id}
+
+
+# inherit the above class to create a new class for the test dataset
+class DataStoreDataset(CustomDataset):
+    # overwrite the load_data_info method
+    def load_data_info(self, root_dir, csv_file, filter_func=None):
+        data_info = pd.read_csv(csv_file)
+        if filter_func is not None:
+            data_info = data_info[data_info.apply(filter_func, axis=1)]
+        return data_info
+
+    def filter_func(self, row):
+        raise NotImplementedError
+        # self.data[self.data.apply(self.condition_func, axis=1)]
+
+    # overwrite the __getitem__ method
+    def __getitem__(self, idx):
+        if torch.is_tensor(idx):
+            idx = idx.tolist()
+
+        age = self.data_info.iloc[idx]['age']
+        participant_id = self.data_info.iloc[idx]['participant_id']
+        status = self.data_info.iloc[idx]['status']
+        # Assuming the path structure is stored in '~/tmp/filename'
+
+    def _get_compressed_path(self, row, tmp_dir='~/tmp'):
+        """
+        This loads the compressed file path and unzips it to the tmp directory
+        """
+        zip_filename = row['filename']  # filename
+        compressed_path = os.path.join(self.root_dir, str(zip_filename))
+        compressed_path = compressed_path + f'/{zip_filename}'
+        return compressed_path
 
 
 if __name__ == '__main__':
