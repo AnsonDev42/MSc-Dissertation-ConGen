@@ -90,6 +90,21 @@ def map_20126_str_to_int():
     return ts_data
 
 
+def add_age_info(curr_df=None, create_csv=False):
+    """
+    This func adds the Age at recruitment 21022 into the dataframe
+     (https://biobank.ndph.ox.ac.uk/showcase/field.cgi?id=21022)
+
+    :param curr_df:
+    :param create_csv:
+    :return:
+    """
+    if curr_df is None:
+        raise NotImplementedError
+
+    raise NotImplementedError
+
+
 def filter_depression(curr_df=None, create_csv=False):
     """
     # Data-Field 20125 Description:	Probable recurrent major depression (severe)
