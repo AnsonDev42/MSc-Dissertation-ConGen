@@ -92,7 +92,7 @@ def map_20126_str_to_int():
     return ts_data
 
 
-def add_age_info(curr_df=None, create_csv=False):
+def add_age_info(curr_df=None, create_csv=False, name='filtered_with_age.csv'):
     """
     This func adds Age when attended assessment centre (21003)  into the dataframe
      (https://biobank.ndph.ox.ac.uk/showcase/field.cgi?id=21003)
@@ -108,14 +108,14 @@ def add_age_info(curr_df=None, create_csv=False):
             # load age file using 21003
             raise NotImplementedError
 
-    with open('Touchscreen.csv', 'rb') as f:
-        ts_data = pd.read_csv(f, sep=',', usecols=['f.eid', 'f.21003.0.0'], low_memory=False)
-    # ts_data = ts_data[['f.eid', 'f.21003.0.0']]
+    ts_data = pyreadr.read_r('Recruitment.rds')
+    ts_data = ts_data[None][['f.eid', 'f.21003.0.0', 'f.21003.1.0', 'f.21003.2.0', 'f.21003.3.0']]
+
     ts_data = ts_data.rename(columns={'f.eid': 'subjectID'})
     # intersect merge ts_data with curr_df
     curr_df = pd.merge(curr_df, ts_data, on='subjectID', how='inner')
     if create_csv:
-        curr_df.to_csv('filtered_with_age.csv', index=False)
+        curr_df.to_csv(name, index=False)
     return curr_df
 
 
@@ -165,34 +165,29 @@ def filter_depression(curr_df=None, create_csv=False):
 
 
 def filter_diabetes(curr_df=None, create_csv=False):
-    # Data-Field 2443: Diabetes diagnosed by doctor
-    # https://biobank.ndph.ox.ac.uk/showcase/field.cgi?id=2443
+    # Data-Field 2443: 	Age diabetes diagnosed
+    # https://biobank.ndph.ox.ac.uk/showcase/field.cgi?id=2976
     """
-    1	Yes
-    0	No
+    >=1	age diabetes diagnosed
+    0	nan
     -1	Do not know
     -3	Prefer not to answer
     :return:
     """
     with open('Touchscreen.csv', 'rb') as f:
-        ts_data = pd.read_csv(f, usecols=['f.eid', 'f.2443.0.0', 'f.2443.1.0', 'f.2443.2.0',
-                                          'f.2443.3.0'], sep=',', low_memory=False)
-    # filter 2443._.0 == Yes and 2443._.0 == No only,  where _ is 0-3
+        ts_data = pd.read_csv(f, usecols=['f.eid', 'f.2976.0.0', 'f.2976.1.0', 'f.2976.2.0',
+                                          'f.2976.3.0'], sep=',', low_memory=False)
     ts_data = ts_data.rename(columns={'f.eid': 'subjectID'})
-    ts_data = pd.merge(curr_df, ts_data[['subjectID', 'f.2443.0.0', 'f.2443.1.0', 'f.2443.2.0',
-                                         'f.2443.3.0']], on='subjectID',
+    ts_data = pd.merge(curr_df, ts_data[['subjectID', 'f.2976.0.0', 'f.2976.1.0', 'f.2976.2.0',
+                                         'f.2976.3.0']], on='subjectID',
                        how='left')
-
+    # filter 2976._.0 that >=1 but some are nan so we need to filter them out
+    ts_data = ts_data.fillna(0)
     filtered_data = ts_data[
-        ((ts_data['f.2443.0.0'] == 'Yes') | (ts_data['f.2443.0.0'] == 'No')) &
-        ((ts_data['f.2443.1.0'] == 'Yes') | (ts_data['f.2443.1.0'] == 'No')) &
-        ((ts_data['f.2443.2.0'] == 'Yes') | (ts_data['f.2443.2.0'] == 'No')) &
-        ((ts_data['f.2443.3.0'] == 'Yes') | (ts_data['f.2443.3.0'] == 'No'))]
+        ts_data['f.2976.0.0'] >= 1 | ts_data['f.2976.1.0'] >= 1 | ts_data['f.2976.2.0'] >= 1 | ts_data[
+            'f.2976.3.0'] >= 1]
     print(f'length of filtered_data from diabetes {len(filtered_data)}')
-    # replace four 2243 cols into one 2243 that if one of them is Yes, then Yes, else No
-    filtered_data['f.2443'] = filtered_data.apply(lambda x: 1 if x['f.2443.0.0'] == 'Yes' or x[
-        'f.2443.1.0'] == 'Yes' or x['f.2443.2.0'] == 'Yes' or x['f.2443.3.0'] == 'Yes' else 0, axis=1)
-    filtered_data = filtered_data[['subjectID', 'f.2443']]
+    filtered_data = filtered_data[['subjectID', 'f.2976.0.0', 'f.2976.1.0', 'f.2976.2.0', 'f.2976.3.0']]
 
     if curr_df is None:
         return filtered_data
@@ -207,26 +202,58 @@ def filter_diabetes(curr_df=None, create_csv=False):
         return result_df
 
 
+def create_unfiltered_mdd_db_csv():
+    with open('Touchscreen.csv', 'rb') as f:
+        ts_data = pd.read_csv(f, usecols=['f.eid', 'f.2976.0.0', 'f.2976.1.0', 'f.2976.2.0',
+                                          'f.2976.3.0', 'f.20126.0.0', ], sep=',', low_memory=False)
+    # export to csv
+    ts_data.to_csv('unfiltered_mdd_db.csv', index=False)
+    return 'unfiltered_mdd_db.csv created'
+
+
+def filter_na_data(unfiltered_file='unfiltered_mdd_db_age.csv'):
+    # remove f.20126.0.0 if it is nan  20126: Depression
+    with open(unfiltered_file, 'rb') as f:
+        data = pd.read_csv(f, sep=',', low_memory=False)
+    data = data[data['f.20126.0.0'].notna()]
+    print(f'length of filtered_data from non-nan MDD {len(data)}')
+    #  filter out f.21003._.0 (age) if it is nan
+    data = data[data['f.21003.0.0'].notna() | data['f.21003.1.0'].notna() | data['f.21003.2.0'].notna() | data[
+        'f.21003.3.0'].notna()]  # 21003: Age when attended assessment centre
+    print(f'length of filtered_data from non-nan age {len(data)}')
+    # filter out diabetes data if all 4 columns are nan (f.2976._.0)    2976: Age diabetes diagnosed
+    data = data[data['f.2976.0.0'].isna() & data['f.2976.1.0'].isna() & data['f.2976.2.0'].isna() & data[
+        'f.2976.3.0'].isna()]
+    # data = data[data['f.2976.0.0'].notna() | data['f.2976.1.0'].notna() | data['f.2976.2.0'].notna() | data[
+    #     'f.2976.3.0'].notna()]
+    print(f'length of filtered_data from non-nan DB  {len(data)}')
+    # data = data[
+    #     (data['f.2976.0.0'] >= 1) | (data['f.2976.1.0'] >= 1) | (data['f.2976.2.0'] >= 1) | (data['f.2976.3.0'] >= 1)]
+
+    data.to_csv('filtered_mdd_db_age.csv', index=False)
+    print('filtered_mdd_db_age.csv created')
+    return data
+
+
 if __name__ == '__main__':
-    # map_20126_str_to_int()
-    # import pickle
-    #
-    # # with open('Touchscreen.csv', 'rb') as f:
-    # ts_data = pd.read_csv('Touchscreen.csv', sep=',', )
-    # ts_data = bz2.BZ2File(ts_data, 'w')
-    # with open('ts_compressed_.pbz2', 'wb') as f:
-    #     pickle.dump(ts_data, f)
-    # exit(0)
-
-    # ts_data = pd.read_csv(f, usecols=['subjectID', 'f.2443.0.0', 'f.2443.1.0', 'f.2443.2.0',
-    #                                   'f.2443.3.0'], sep=',', low_memory=False)
-
     curr_df = create_cached_t1_filenames(create_csv=False)
-    filtered_df = filter_depression(curr_df=curr_df, create_csv=True)
-    filtered_df = filter_diabetes(curr_df=filtered_df, create_csv=True)
+    # filtered_df = filter_depression(curr_df=curr_df, create_csv=True)
+    # filtered_df = filter_diabetes(curr_df=filtered_df, create_csv=True)
+    #
+    # create_unfiltered_mdd_db_csv()
+    # filtered_df = pd.read_csv('unfiltered_mdd_db.csv', sep=',')
+    # filtered_df = filtered_df.rename(columns={'f.eid': 'subjectID'})
+    # print('start merge with curr_df for mdd + db')
+    # filtered_df = pd.merge(curr_df, filtered_df, on='subjectID', how='inner')
+    # print('start add age info for mdd + db')
+    # filtered_df = add_age_info(filtered_df, create_csv=True, name='unfiltered_mdd_db_age.csv')
+    data = filter_na_data('unfiltered_mdd_db_age.csv')
+    depression = data[
+        (data['f.20126.0.0'] == 'Probable Recurrent major depression (severe)') |
+        (data['f.20126.0.0'] == 'Probable Recurrent major depression (moderate)') |
+        (data['f.20126.0.0'] == 'Single Probable major depression episode')
+        ]
 
-    filtered_df = pd.read_csv('filtered.csv', sep=',')
-    filtered_df = add_age_info(filtered_df, create_csv=True)
-
-    print(len(filtered_df))
-    print(filtered_df.head(5).keys())
+    print(f'length of all nan-db data {len(data)}')
+    print(f'length of depression {len(depression)}')
+    print(f'length of healthy ppl with nan db {len(data) - len(depression)}')
