@@ -1,3 +1,5 @@
+import bz2
+
 import pandas as pd
 import pyreadr
 import os
@@ -92,17 +94,29 @@ def map_20126_str_to_int():
 
 def add_age_info(curr_df=None, create_csv=False):
     """
-    This func adds the Age at recruitment 21022 into the dataframe
-     (https://biobank.ndph.ox.ac.uk/showcase/field.cgi?id=21022)
+    This func adds Age when attended assessment centre (21003)  into the dataframe
+     (https://biobank.ndph.ox.ac.uk/showcase/field.cgi?id=21003)
 
     :param curr_df:
     :param create_csv:
     :return:
     """
     if curr_df is None:
-        raise NotImplementedError
+        # load md int file
+        with open('Touchscreen_20126md_int.csv', 'rb') as f:
+            curr_df = pd.read_csv(f, sep=',')
+            # load age file using 21003
+            raise NotImplementedError
 
-    raise NotImplementedError
+    with open('Touchscreen.csv', 'rb') as f:
+        ts_data = pd.read_csv(f, sep=',', usecols=['f.eid', 'f.21003.0.0'], low_memory=False)
+    # ts_data = ts_data[['f.eid', 'f.21003.0.0']]
+    ts_data = ts_data.rename(columns={'f.eid': 'subjectID'})
+    # intersect merge ts_data with curr_df
+    curr_df = pd.merge(curr_df, ts_data, on='subjectID', how='inner')
+    if create_csv:
+        curr_df.to_csv('filtered_with_age.csv', index=False)
+    return curr_df
 
 
 def filter_depression(curr_df=None, create_csv=False):
@@ -112,20 +126,20 @@ def filter_depression(curr_df=None, create_csv=False):
     """
     # md_df = create_depression_csv()
     ts_data = pd.read_csv('Touchscreen_20126md_int.csv', sep=',')
-    # all = pd.merge(ts_data, curr_df, left_on='f.eid', right_on='subjectID', how='inner')
     print('before merge, all the keys in Touchscreen_20126md_int')
     print(f'length of ts_data {len(ts_data)}')
     ts_data_counts = ts_data
     print(ts_data_counts['f.20126.0.0'].value_counts().sort_index())
     if curr_df is None:
-        return ts_data
+        raise NotImplementedError
     else:
-        # filtered = ts_data
-        # print(f'ts_data{ts_data.keys()}')
-        # print(f'curr_df{curr_df.keys()}')
-        filtered = pd.merge(ts_data, curr_df, left_on='f.eid', right_on='subjectID', how='inner')
+        ts_data = ts_data.rename(columns={'f.eid': 'subjectID'})
+        # filtered = pd.merge(ts_data, curr_df, left_on='f.eid', right_on='subjectID', how='inner')
+
+        filtered = pd.merge(ts_data, curr_df, left_on='subjectID', right_on='subjectID', how='inner')
+
         print('after inner merge...')
-        # print(filtered['f.20126.0.0'].value_counts().sort_index())
+        print(filtered['f.20126.0.0'].value_counts().sort_index())
 
         # Define a dictionary to map index to description
         index_description = {
@@ -138,24 +152,81 @@ def filter_depression(curr_df=None, create_csv=False):
         }
         value_counts = filtered
         # Get the value counts
-        value_counts = value_counts['f.20126.0.0'].value_counts().rename('count').reset_index().rename(
-            columns={'index': 'index_value'})
+        # value_counts = value_counts['f.20126.0.0'].value_counts().rename('count').reset_index().rename(columns={'index': 'index_value'})
 
         # Add the description column using the map function
-        value_counts['description'] = value_counts['index_value'].map(index_description)
+        # value_counts['description'] = value_counts['index_value'].map(index_description)
 
         # Print the value counts with descriptions
-        print(value_counts)
-        filtered.to_csv('filtered_depression.csv', index=False)
+        # print(value_counts)
+        if create_csv:
+            filtered.to_csv('filtered_depression.csv', index=False)
         return filtered
+
+
+def filter_diabetes(curr_df=None, create_csv=False):
+    # Data-Field 2443: Diabetes diagnosed by doctor
+    # https://biobank.ndph.ox.ac.uk/showcase/field.cgi?id=2443
+    """
+    1	Yes
+    0	No
+    -1	Do not know
+    -3	Prefer not to answer
+    :return:
+    """
+    with open('Touchscreen.csv', 'rb') as f:
+        ts_data = pd.read_csv(f, usecols=['f.eid', 'f.2443.0.0', 'f.2443.1.0', 'f.2443.2.0',
+                                          'f.2443.3.0'], sep=',', low_memory=False)
+    # filter 2443._.0 == Yes and 2443._.0 == No only,  where _ is 0-3
+    ts_data = ts_data.rename(columns={'f.eid': 'subjectID'})
+    ts_data = pd.merge(curr_df, ts_data[['subjectID', 'f.2443.0.0', 'f.2443.1.0', 'f.2443.2.0',
+                                         'f.2443.3.0']], on='subjectID',
+                       how='left')
+
+    filtered_data = ts_data[
+        ((ts_data['f.2443.0.0'] == 'Yes') | (ts_data['f.2443.0.0'] == 'No')) &
+        ((ts_data['f.2443.1.0'] == 'Yes') | (ts_data['f.2443.1.0'] == 'No')) &
+        ((ts_data['f.2443.2.0'] == 'Yes') | (ts_data['f.2443.2.0'] == 'No')) &
+        ((ts_data['f.2443.3.0'] == 'Yes') | (ts_data['f.2443.3.0'] == 'No'))]
+    print(f'length of filtered_data from diabetes {len(filtered_data)}')
+    # replace four 2243 cols into one 2243 that if one of them is Yes, then Yes, else No
+    filtered_data['f.2443'] = filtered_data.apply(lambda x: 1 if x['f.2443.0.0'] == 'Yes' or x[
+        'f.2443.1.0'] == 'Yes' or x['f.2443.2.0'] == 'Yes' or x['f.2443.3.0'] == 'Yes' else 0, axis=1)
+    filtered_data = filtered_data[['subjectID', 'f.2443']]
+
+    if curr_df is None:
+        return filtered_data
+    else:
+        # only add the one column to the curr_df to state the diabetes status for existing subjects from curr_df
+        print(f'length of filtered_data from diabetes {len(filtered_data)}')
+        # Merge the two dataframes on subjectID
+        result_df = pd.merge(curr_df, filtered_data[['subjectID', 'f.2443']], on='subjectID',
+                             how='left')
+        if create_csv:
+            result_df.to_csv('filtered.csv', index=False)
+        return result_df
 
 
 if __name__ == '__main__':
     # map_20126_str_to_int()
-    # depression = filter_depression()
-    # exit()
+    # import pickle
+    #
+    # # with open('Touchscreen.csv', 'rb') as f:
+    # ts_data = pd.read_csv('Touchscreen.csv', sep=',', )
+    # ts_data = bz2.BZ2File(ts_data, 'w')
+    # with open('ts_compressed_.pbz2', 'wb') as f:
+    #     pickle.dump(ts_data, f)
+    # exit(0)
+
+    # ts_data = pd.read_csv(f, usecols=['subjectID', 'f.2443.0.0', 'f.2443.1.0', 'f.2443.2.0',
+    #                                   'f.2443.3.0'], sep=',', low_memory=False)
+
     curr_df = create_cached_t1_filenames(create_csv=False)
     filtered_df = filter_depression(curr_df=curr_df, create_csv=True)
+    filtered_df = filter_diabetes(curr_df=filtered_df, create_csv=True)
+
+    filtered_df = pd.read_csv('filtered.csv', sep=',')
+    filtered_df = add_age_info(filtered_df, create_csv=True)
 
     print(len(filtered_df))
     print(filtered_df.head(5).keys())
