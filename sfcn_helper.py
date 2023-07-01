@@ -68,7 +68,7 @@ def linear_bias_correction():
     x_corrected_test = correct_bias(x_pred_HC, y_actual_HC, x_pred_test)
     # x_corrected_patient = correct_bias(x_pred_HC, y_actual_HC,
     #                                    x_pred_patient)  # We fit on HC data and correct the patient data
-    mean_squared_error(y_actual_hc, x_corrected_test)
+    mean_squared_error(y_actual_HC, x_corrected_test)
     # Print out corrected results
     print(f'Corrected brain ages for HC group: {x_corrected_test.flatten()}')
     print(f'Actual brain ages for HC group: {y_actual_test.flatten()}')

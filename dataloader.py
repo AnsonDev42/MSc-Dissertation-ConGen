@@ -1,4 +1,5 @@
 import csv
+import hashlib
 import os
 import zipfile
 import tempfile
@@ -87,21 +88,27 @@ class DataStoreDataset(CustomDataset):
         data_info = pd.read_csv(csv_file)
         if filter_func is not None:
             self.data_info = data_info[data_info.apply(filter_func, axis=1)]
+        else:
+            self.data_info = data_info
 
     def __getitem__(self, idx):
         if torch.is_tensor(idx):
             idx = idx.tolist()
 
         row = self.data_info.iloc[idx]
+
         try:
             extracted_path, tmp_dir = self._extract_required_file(row)
             age = row['f.21003.2.0']
-            item = (extracted_path, age)
         except Exception as e:
             # print(e)
             return None
 
-        return item, tmp_dir
+        sample = {'age': age, 'root_dir': self.root_dir, 'study': 'ukb',
+                  'filename': row['filename'], 'mdd_status': row['depression'], 'tmp_dir': tmp_dir,
+                  'extracted_path': extracted_path}
+
+        return sample
 
     def _extract_required_file(self, row):
         zip_filename = row['filename']
@@ -127,20 +134,28 @@ class DataStoreDataset(CustomDataset):
 
             # Extract the required file into the temporary directory
             target_file_path = os.path.join(tmp_dir, 'T1/T1_brain_to_MNI.nii.gz')
-            zip_ref.extract('T1/T1_brain_to_MNI.nii.gz', target_file_path)
+            zip_ref.extract('T1/T1_brain_to_MNI.nii.gz', tmp_dir)
 
         return target_file_path, tmp_dir
 
 
 def custom_collate_fn(batch):
-    batch = list(filter(lambda x: x is not None, batch))
-    if len(batch) == 0:  # fix for empty batch
-        return []
-    data, tmp_dirs = zip(*batch)  # unzip the data and the tmp_dirs
-    return torch.utils.data.dataloader.default_collate(data), tmp_dirs
+    batch = list(filter(lambda x: x is not None, batch))  # remove None
+    if len(batch) == 0:  # if batch is empty
+        return {}  # return an empty dict
+    return torch.utils.data.dataloader.default_collate(batch)  # use default collate on the filtered batch
 
 
 if __name__ == '__main__':
+    with zipfile.ZipFile('data/1002490_20252_2_0.zip', 'r') as zip_ref:
+        tmp_dir = tempfile.mkdtemp()
+
+        # Extract the required file into the temporary directory
+        target_file_path = os.path.join(tmp_dir, 'T1/T1_brain_to_MNI.nii.gz')
+        zip_ref.extract('T1/T1_brain_to_MNI.nii.gz', target_file_path)
+
+    # compare checksum with original file
+
     # dataset = CustomDataset(root_dir='data/preprocessed', csv_file='data/clinical_data.csv')
     # dataloader = DataLoader(dataset, batch_size=4, shuffle=True, num_workers=4)
     # dataloader_iter = iter(dataloader)
@@ -160,25 +175,3 @@ if __name__ == '__main__':
     # Create DataLoader objects
     depressed_loader = DataLoader(depressed_dataset, batch_size=32, shuffle=False, collate_fn=custom_collate_fn)
     healthy_loader = DataLoader(healthy_dataset, batch_size=32, shuffle=False, collate_fn=custom_collate_fn)
-
-    for i, (data_n_tmp_dirs) in enumerate(healthy_loader):
-        if (data_n_tmp_dirs is None) or (len(data_n_tmp_dirs) == 0):
-            continue
-        data, tmp_dirs = data_n_tmp_dirs
-        # for path, age in zip(data[0], data[1]):
-        #     print(f"Data batch {i}, Path: {path}, Age: {age}")
-
-        # Clean up the batch of temporary files
-        for tmp_dir in tmp_dirs:
-            if tmp_dir is not None:
-                shutil.rmtree(tmp_dir)
-
-    # for i, (data, tmp_dirs) in enumerate(depressed_loader):
-    #     if len(data) == 0:
-    #         continue
-    #     # Model training logic here
-    #     # ...
-    #     # Clean up the batch of temporary files
-    #     for tmp_dir in tmp_dirs:
-    #         if tmp_dir is not None:
-    #             shutil.rmtree(tmp_dir)
