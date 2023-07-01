@@ -1,3 +1,4 @@
+import csv
 import os
 import zipfile
 import tempfile
@@ -14,6 +15,7 @@ class CustomDataset(Dataset):
     def __init__(self, root_dir, csv_file):
         self.root_dir = root_dir
         self.data_info = self.load_data_info(root_dir, csv_file)
+        self.missing_file_log = 'missing_files.csv'
 
     def load_data_info(self, root_dir, csv_file):
         data_info = pd.read_csv(csv_file)
@@ -96,24 +98,29 @@ class DataStoreDataset(CustomDataset):
             age = row['f.21003.2.0']
             item = (extracted_path, age)
         except Exception as e:
-            print(e)
+            # print(e)
             return None
 
-        # Clean up the temporary directory
-        shutil.rmtree(tmp_dir)
-
-        return item
+        return item, tmp_dir
 
     def _extract_required_file(self, row):
         zip_filename = row['filename']
         full_compressed_path = os.path.join(self.root_dir, str(zip_filename))
 
         if not os.path.exists(full_compressed_path):
-            raise Exception(f"Zip file not found: {full_compressed_path}")
+            with open(self.missing_file_log, 'a') as csvfile:
+                writer = csv.writer(csvfile)
+                writer.writerow([zip_filename])
+            # raise Exception(f"Zip file not found: {full_compressed_path}")
+            return None
 
         with zipfile.ZipFile(full_compressed_path, 'r') as zip_ref:
             if 'T1/T1_brain_to_MNI.nii.gz' not in zip_ref.namelist():
-                raise Exception(f"Required file not found in zip archive: {full_compressed_path}")
+                with open(self.missing_file_log, 'a') as csvfile:
+                    writer = csv.writer(csvfile)
+                    writer.writerow([zip_filename])
+                # raise Exception(f"Required file not found in zip archive: {full_compressed_path}")
+                return None
 
             # Create a temporary directory
             tmp_dir = tempfile.mkdtemp()
@@ -127,9 +134,10 @@ class DataStoreDataset(CustomDataset):
 
 def custom_collate_fn(batch):
     batch = list(filter(lambda x: x is not None, batch))
-    if len(batch) == 0:  # add this check
+    if len(batch) == 0:  # fix for empty batch
         return []
-    return torch.utils.data.dataloader.default_collate(batch)
+    data, tmp_dirs = zip(*batch)  # unzip the data and the tmp_dirs
+    return torch.utils.data.dataloader.default_collate(data), tmp_dirs
 
 
 if __name__ == '__main__':
@@ -150,24 +158,27 @@ if __name__ == '__main__':
     healthy_dataset.load_data_info(root_dir, csv_file, filter_func=filter_healthy)
 
     # Create DataLoader objects
-    depressed_loader = DataLoader(depressed_dataset, batch_size=1, shuffle=True, collate_fn=custom_collate_fn)
-    healthy_loader = DataLoader(healthy_dataset, batch_size=1, shuffle=True, collate_fn=custom_collate_fn)
+    depressed_loader = DataLoader(depressed_dataset, batch_size=32, shuffle=False, collate_fn=custom_collate_fn)
+    healthy_loader = DataLoader(healthy_dataset, batch_size=32, shuffle=False, collate_fn=custom_collate_fn)
 
-    # Example of iterating over the DataLoader
-    for i, data in enumerate(depressed_loader):
-        # Skip if data is None
-        if (data is None) or (len(data) == 0):
+    for i, (data_n_tmp_dirs) in enumerate(healthy_loader):
+        if (data_n_tmp_dirs is None) or (len(data_n_tmp_dirs) == 0):
             continue
+        data, tmp_dirs = data_n_tmp_dirs
+        # for path, age in zip(data[0], data[1]):
+        #     print(f"Data batch {i}, Path: {path}, Age: {age}")
 
-        # Here, data is a tuple (extracted_path, age)
-        extracted_path, age = data
-        # Now you can use extracted_path and age as required
-        print(f"Data batch {i}, Path: {extracted_path}, Age: {age}")
+        # Clean up the batch of temporary files
+        for tmp_dir in tmp_dirs:
+            if tmp_dir is not None:
+                shutil.rmtree(tmp_dir)
 
-    for i, data in enumerate(healthy_loader):
-        # Skip if data is None
-        if (data is None) or (len(data) == 0):
-            continue
-
-        extracted_path, age = data
-        print(f"Data batch {i}, Path: {extracted_path}, Age: {age}")
+    # for i, (data, tmp_dirs) in enumerate(depressed_loader):
+    #     if len(data) == 0:
+    #         continue
+    #     # Model training logic here
+    #     # ...
+    #     # Clean up the batch of temporary files
+    #     for tmp_dir in tmp_dirs:
+    #         if tmp_dir is not None:
+    #             shutil.rmtree(tmp_dir)
