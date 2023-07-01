@@ -165,42 +165,42 @@ def filter_depression(curr_df=None, create_csv=False):
         return filtered
 
 
-def filter_diabetes(curr_df=None, create_csv=False):
-    # Data-Field 2443: 	Age diabetes diagnosed
-    # https://biobank.ndph.ox.ac.uk/showcase/field.cgi?id=2976
-    """
-    >=1	age diabetes diagnosed
-    0	nan
-    -1	Do not know
-    -3	Prefer not to answer
-    :return:
-    """
-    with open('Touchscreen.csv', 'rb') as f:
-        ts_data = pd.read_csv(f, usecols=['f.eid', 'f.2976.0.0', 'f.2976.1.0', 'f.2976.2.0',
-                                          'f.2976.3.0'], sep=',', low_memory=False)
-    ts_data = ts_data.rename(columns={'f.eid': 'subjectID'})
-    ts_data = pd.merge(curr_df, ts_data[['subjectID', 'f.2976.0.0', 'f.2976.1.0', 'f.2976.2.0',
-                                         'f.2976.3.0']], on='subjectID',
-                       how='left')
-    # filter 2976._.0 that >=1 but some are nan so we need to filter them out
-    ts_data = ts_data.fillna(0)
-    filtered_data = ts_data[
-        ts_data['f.2976.0.0'] >= 1 | ts_data['f.2976.1.0'] >= 1 | ts_data['f.2976.2.0'] >= 1 | ts_data[
-            'f.2976.3.0'] >= 1]
-    print(f'length of filtered_data from diabetes {len(filtered_data)}')
-    filtered_data = filtered_data[['subjectID', 'f.2976.0.0', 'f.2976.1.0', 'f.2976.2.0', 'f.2976.3.0']]
-
-    if curr_df is None:
-        return filtered_data
-    else:
-        # only add the one column to the curr_df to state the diabetes status for existing subjects from curr_df
-        print(f'length of filtered_data from diabetes {len(filtered_data)}')
-        # Merge the two dataframes on subjectID
-        result_df = pd.merge(curr_df, filtered_data[['subjectID', 'f.2443']], on='subjectID',
-                             how='left')
-        if create_csv:
-            result_df.to_csv('filtered.csv', index=False)
-        return result_df
+# def filter_diabetes(curr_df=None, create_csv=False):
+#     # Data-Field 2443: 	Age diabetes diagnosed
+#     # https://biobank.ndph.ox.ac.uk/showcase/field.cgi?id=2976
+#     """
+#     >=1	age diabetes diagnosed
+#     0	nan
+#     -1	Do not know
+#     -3	Prefer not to answer
+#     :return:
+#     """
+#     with open('Touchscreen.csv', 'rb') as f:
+#         ts_data = pd.read_csv(f, usecols=['f.eid', 'f.2976.2.0',
+#                                           'f.2976.3.0'], sep=',', low_memory=False)
+#     ts_data = ts_data.rename(columns={'f.eid': 'subjectID'})
+#     ts_data = pd.merge(curr_df, ts_data[['subjectID', 'f.2976.2.0',
+#                                          'f.2976.3.0']], on='subjectID',
+#                        how='left')
+#     # filter 2976._.0 that >=1 but some are nan so we need to filter them out
+#     ts_data = ts_data.fillna(0)
+#     filtered_data = ts_data[
+#         ts_data['f.2976.2.0'] >= 1 | ts_data[
+#             'f.2976.3.0'] >= 1]
+#     print(f'length of filtered_data from diabetes {len(filtered_data)}')
+#     filtered_data = filtered_data[['subjectID', 'f.2976.2.0', 'f.2976.3.0']]
+#
+#     if curr_df is None:
+#         return filtered_data
+#     else:
+#         # only add the one column to the curr_df to state the diabetes status for existing subjects from curr_df
+#         print(f'length of filtered_data from diabetes {len(filtered_data)}')
+#         # Merge the two dataframes on subjectID
+#         result_df = pd.merge(curr_df, filtered_data[['subjectID', 'f.2443']], on='subjectID',
+#                              how='left')
+#         if create_csv:
+#             result_df.to_csv('filtered.csv', index=False)
+#         return result_df
 
 
 def create_unfiltered_mdd_db_csv():
@@ -223,10 +223,8 @@ def filter_na_data(unfiltered_file='unfiltered_mdd_db_age.csv'):
         'f.21003.3.0'].notna()]  # 21003: Age when attended assessment centre
     print(f'length of filtered_data from non-nan age {len(data)}')
     # filter out diabetes data if all 4 columns are nan (f.2976._.0)    2976: Age diabetes diagnosed
-    data = data[data['f.2976.0.0'].isna() & data['f.2976.1.0'].isna() & data['f.2976.2.0'].isna() & data[
-        'f.2976.3.0'].isna()]
-    # data = data[data['f.2976.0.0'].notna() | data['f.2976.1.0'].notna() | data['f.2976.2.0'].notna() | data[
-    #     'f.2976.3.0'].notna()]
+    data = data[data['f.2976.2.0'].isna() & data['f.2976.3.0'].isna()]
+    # data = data[data['f.2976.2.0'].notna() | data['f.2976.3.0'].notna()]
     print(f'length of filtered_data from non-nan DB  {len(data)}')
     # data = data[
     #     (data['f.2976.0.0'] >= 1) | (data['f.2976.1.0'] >= 1) | (data['f.2976.2.0'] >= 1) | (data['f.2976.3.0'] >= 1)]
@@ -256,7 +254,6 @@ if __name__ == '__main__':
         ]
 
     hc = data[data['f.20126.0.0'] == 'No Bipolar or Depression']
-    # add a col in data to indicate depression status: 1 for depression(3-5), 0 for 'No Bipolar or Depression'
 
     data['depression'] = data['f.20126.0.0'].apply(lambda x: 1 if x in ['Probable Recurrent major depression (severe)',
                                                                         'Probable Recurrent major depression (moderate)',
@@ -272,3 +269,20 @@ if __name__ == '__main__':
 
     assert len(data[data['depression'] == 1]) == len(depression)
     assert len(data[data['depression'] == 0]) == len(hc)
+    # chceck with yunfei's data
+    with open('HC_pred_age_6802.csv', 'rb') as f:
+        hc_data_yf = pd.read_csv(f, sep=',', low_memory=False)
+        hc_data_yf = hc_data_yf.rename(columns={'f.eid': 'subjectID'})
+        # print out all unique id only in hc_data_yf but not in hc
+        print(f'unique id in hc_data_yf but not in hc {(set(hc_data_yf.subjectID) - set(hc.subjectID))}')
+        # all unique id only in hc but not in hc_data_yf
+        print(f'unique id in hc but not in hc_data_yf {(set(hc.subjectID) - set(hc_data_yf.subjectID))}')
+
+    # check with yunfei's data
+    with open('MDD_pred_age_2461.csv', 'rb') as f:
+        mdd_data = pd.read_csv(f, sep=',', low_memory=False)
+        # inner joint with hc
+        mdd_data = mdd_data.rename(columns={'f.eid': 'subjectID'})
+        mdd_data = pd.merge(mdd_data, depression, on='subjectID', how='inner')
+
+        print(f'length of same mdd_data {len(mdd_data)}')
