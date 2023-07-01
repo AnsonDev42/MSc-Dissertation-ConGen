@@ -1,5 +1,7 @@
 import os
-
+import zipfile
+import tempfile
+import shutil
 import numpy as np
 import pandas as pd
 import torch
@@ -70,44 +72,102 @@ class CustomDataset(Dataset):
             #           'participant_id': participant_id}
 
 
-# inherit the above class to create a new class for the test dataset
+def filter_depressed(row):
+    return row['depression'] == 1
+
+
+def filter_healthy(row):
+    return row['depression'] == 0
+
+
 class DataStoreDataset(CustomDataset):
-    # overwrite the load_data_info method
     def load_data_info(self, root_dir, csv_file, filter_func=None):
         data_info = pd.read_csv(csv_file)
         if filter_func is not None:
-            data_info = data_info[data_info.apply(filter_func, axis=1)]
-        return data_info
+            self.data_info = data_info[data_info.apply(filter_func, axis=1)]
 
-    def filter_func(self, row):
-        raise NotImplementedError
-        # self.data[self.data.apply(self.condition_func, axis=1)]
-
-    # overwrite the __getitem__ method
     def __getitem__(self, idx):
         if torch.is_tensor(idx):
             idx = idx.tolist()
 
-        age = self.data_info.iloc[idx]['age']
-        participant_id = self.data_info.iloc[idx]['participant_id']
-        status = self.data_info.iloc[idx]['status']
-        # Assuming the path structure is stored in '~/tmp/filename'
+        row = self.data_info.iloc[idx]
+        try:
+            extracted_path, tmp_dir = self._extract_required_file(row)
+            age = row['f.21003.2.0']
+            item = (extracted_path, age)
+        except Exception as e:
+            print(e)
+            return None
 
-    def _get_compressed_path(self, row, tmp_dir='~/tmp'):
-        """
-        This loads the compressed file path and unzips it to the tmp directory
-        """
-        zip_filename = row['filename']  # filename
-        compressed_path = os.path.join(self.root_dir, str(zip_filename))
-        compressed_path = compressed_path + f'/{zip_filename}'
-        return compressed_path
+        # Clean up the temporary directory
+        shutil.rmtree(tmp_dir)
+
+        return item
+
+    def _extract_required_file(self, row):
+        zip_filename = row['filename']
+        full_compressed_path = os.path.join(self.root_dir, str(zip_filename))
+
+        if not os.path.exists(full_compressed_path):
+            raise Exception(f"Zip file not found: {full_compressed_path}")
+
+        with zipfile.ZipFile(full_compressed_path, 'r') as zip_ref:
+            if 'T1/T1_brain_to_MNI.nii.gz' not in zip_ref.namelist():
+                raise Exception(f"Required file not found in zip archive: {full_compressed_path}")
+
+            # Create a temporary directory
+            tmp_dir = tempfile.mkdtemp()
+
+            # Extract the required file into the temporary directory
+            target_file_path = os.path.join(tmp_dir, 'T1/T1_brain_to_MNI.nii.gz')
+            zip_ref.extract('T1/T1_brain_to_MNI.nii.gz', target_file_path)
+
+        return target_file_path, tmp_dir
+
+
+def custom_collate_fn(batch):
+    batch = list(filter(lambda x: x is not None, batch))
+    if len(batch) == 0:  # add this check
+        return []
+    return torch.utils.data.dataloader.default_collate(batch)
 
 
 if __name__ == '__main__':
-    dataset = CustomDataset(root_dir='data/preprocessed', csv_file='data/clinical_data.csv')
-    dataloader = DataLoader(dataset, batch_size=4, shuffle=True, num_workers=4)
-    dataloader_iter = iter(dataloader)
-    sample = next(dataloader_iter)
-    assert sample['h5_data'].shape == (4, 1, 160, 192, 160), f"{sample['h5_data'].size()}"
-    print(sample['age'])
-    print(sample['participant_id'])
+    # dataset = CustomDataset(root_dir='data/preprocessed', csv_file='data/clinical_data.csv')
+    # dataloader = DataLoader(dataset, batch_size=4, shuffle=True, num_workers=4)
+    # dataloader_iter = iter(dataloader)
+    # sample = next(dataloader_iter)
+    # assert sample['h5_data'].shape == (4, 1, 160, 192, 160), f"{sample['h5_data'].size()}"
+    # print(sample['age'])
+    # print(sample['participant_id'])
+    HOME = os.environ['HOME']
+    root_dir = f'{HOME}/GenScotDepression/data/ukb/imaging/raw/t1_structural_nifti_20252'
+    csv_file = 'data/filtered_mdd_db_age.csv'
+    depressed_dataset = DataStoreDataset(root_dir, csv_file)
+    depressed_dataset.load_data_info(root_dir, csv_file, filter_func=filter_depressed)
+
+    healthy_dataset = DataStoreDataset(root_dir, csv_file)
+    healthy_dataset.load_data_info(root_dir, csv_file, filter_func=filter_healthy)
+
+    # Create DataLoader objects
+    depressed_loader = DataLoader(depressed_dataset, batch_size=1, shuffle=True, collate_fn=custom_collate_fn)
+    healthy_loader = DataLoader(healthy_dataset, batch_size=1, shuffle=True, collate_fn=custom_collate_fn)
+
+    # Example of iterating over the DataLoader
+    for i, data in enumerate(depressed_loader):
+        # Skip if data is None
+        if (data is None) or (len(data) == 0):
+            continue
+
+        # Here, data is a tuple (extracted_path, age)
+        extracted_path, age = data
+        # Now you can use extracted_path and age as required
+        print(f"Data batch {i}, Path: {extracted_path}, Age: {age}")
+
+    for i, data in enumerate(healthy_loader):
+        # Skip if data is None
+        if (data is None) or (len(data) == 0):
+            continue
+
+        extracted_path, age = data
+        print(f"Data batch {i}, Path: {extracted_path}, Age: {age}")
