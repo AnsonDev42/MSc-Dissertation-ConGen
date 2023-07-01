@@ -1,5 +1,6 @@
 import bz2
 
+import numpy as np
 import pandas as pd
 import pyreadr
 import os
@@ -109,7 +110,7 @@ def add_age_info(curr_df=None, create_csv=False, name='filtered_with_age.csv'):
             raise NotImplementedError
 
     ts_data = pyreadr.read_r('Recruitment.rds')
-    ts_data = ts_data[None][['f.eid', 'f.21003.0.0', 'f.21003.1.0', 'f.21003.2.0', 'f.21003.3.0']]
+    ts_data = ts_data[None][['f.eid', 'f.21003.2.0', 'f.21003.3.0']]
 
     ts_data = ts_data.rename(columns={'f.eid': 'subjectID'})
     # intersect merge ts_data with curr_df
@@ -218,7 +219,7 @@ def filter_na_data(unfiltered_file='unfiltered_mdd_db_age.csv'):
     data = data[data['f.20126.0.0'].notna()]
     print(f'length of filtered_data from non-nan MDD {len(data)}')
     #  filter out f.21003._.0 (age) if it is nan
-    data = data[data['f.21003.0.0'].notna() | data['f.21003.1.0'].notna() | data['f.21003.2.0'].notna() | data[
+    data = data[data['f.21003.2.0'].notna() | data[
         'f.21003.3.0'].notna()]  # 21003: Age when attended assessment centre
     print(f'length of filtered_data from non-nan age {len(data)}')
     # filter out diabetes data if all 4 columns are nan (f.2976._.0)    2976: Age diabetes diagnosed
@@ -241,12 +242,12 @@ if __name__ == '__main__':
     # filtered_df = filter_diabetes(curr_df=filtered_df, create_csv=True)
     #
     # create_unfiltered_mdd_db_csv()
-    # filtered_df = pd.read_csv('unfiltered_mdd_db.csv', sep=',')
-    # filtered_df = filtered_df.rename(columns={'f.eid': 'subjectID'})
+    filtered_df = pd.read_csv('unfiltered_mdd_db.csv', sep=',')
+    filtered_df = filtered_df.rename(columns={'f.eid': 'subjectID'})
     # print('start merge with curr_df for mdd + db')
-    # filtered_df = pd.merge(curr_df, filtered_df, on='subjectID', how='inner')
+    filtered_df = pd.merge(curr_df, filtered_df, on='subjectID', how='inner')
     # print('start add age info for mdd + db')
-    # filtered_df = add_age_info(filtered_df, create_csv=True, name='unfiltered_mdd_db_age.csv')
+    filtered_df = add_age_info(filtered_df, create_csv=True, name='unfiltered_mdd_db_age.csv')
     data = filter_na_data('unfiltered_mdd_db_age.csv')
     depression = data[
         (data['f.20126.0.0'] == 'Probable Recurrent major depression (severe)') |
@@ -254,6 +255,20 @@ if __name__ == '__main__':
         (data['f.20126.0.0'] == 'Single Probable major depression episode')
         ]
 
+    hc = data[data['f.20126.0.0'] == 'No Bipolar or Depression']
+    # add a col in data to indicate depression status: 1 for depression(3-5), 0 for 'No Bipolar or Depression'
+
+    data['depression'] = data['f.20126.0.0'].apply(lambda x: 1 if x in ['Probable Recurrent major depression (severe)',
+                                                                        'Probable Recurrent major depression (moderate)',
+                                                                        'Single Probable major depression episode']
+    else 0 if x == 'No Bipolar or Depression'
+    else np.nan)
+
+    data.to_csv('filtered_mdd_db_age.csv', index=False)
+
     print(f'length of all nan-db data {len(data)}')
     print(f'length of depression {len(depression)}')
-    print(f'length of healthy ppl with nan db {len(data) - len(depression)}')
+    print(f'length of healthy ppl with nan db {len(hc)}')
+
+    assert len(data[data['depression'] == 1]) == len(depression)
+    assert len(data[data['depression'] == 0]) == len(hc)
