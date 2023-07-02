@@ -130,7 +130,7 @@ class DataStoreDataset(CustomDataset):
                 return None
 
             # Create a temporary directory
-            tmp_dir = tempfile.mkdtemp()
+            tmp_dir = tempfile.mkdtemp(dir="/disk/scratch/s2341683")
 
             # Extract the required file into the temporary directory
             target_file_path = os.path.join(tmp_dir, 'T1/T1_brain_to_MNI.nii.gz')

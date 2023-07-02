@@ -1,3 +1,4 @@
+from matplotlib import pyplot as plt
 from sklearn.linear_model import LinearRegression
 from sklearn.metrics import mean_squared_error
 import pandas as pd
@@ -92,8 +93,20 @@ def bias_correction(y: np.ndarray, y_pred: np.ndarray):
     )
     intercept, slope = linear_fit.intercept_, linear_fit.coef_[0]
     y_pred_unbiased = (y_pred - intercept) / (slope + np.finfo(np.float32).eps)  # avoid division by 0
+    # plot y chronological age vs y_pred_unbiased and the least square fit using the intercept and slope
+    plt.scatter(y, y_pred_unbiased)
+    plt.plot(y, y_pred_unbiased, )
+    plt.xlabel('Chronological age')
+    plt.ylabel('Brain age unbiased')
+    plt.title('bias correction')
+    # plot the line y=intercept + slope*x
+    x = np.linspace(0, 10, 100)
+    y = intercept + slope * x
+    plt.plot(x, y, '-r', label='y=intercept + slope*x')
+    plt.show()
+
     print(f'Intercept: {intercept}, slope: {slope}')
-    return y_pred_unbiased
+    return y_pred_unbiased, intercept, slope
 
 
 def bias_correction_writer():
@@ -105,15 +118,28 @@ def bias_correction_writer():
     :return: predicted brain age with bias correction and the aged percentage of the true age
     """
 
-    df = pd.read_csv('brain_age_info.csv')
+    df = pd.read_csv('brain_age_info_clean.csv')
     y_pred = df['brain_age'].to_numpy()
     y_actual = df['age'].to_numpy()
-    y_pred_unbiased = bias_correction(y_actual, y_pred)
+    y_pred_unbiased, intercept, slope = bias_correction(y_actual, y_pred)
     df['brain_age_unbiased'] = y_pred_unbiased
     df['aged_percentage'] = y_pred_unbiased / y_actual
     df.to_csv('brain_age_info.csv', index=False)
 
 
 if __name__ == '__main__':
-    # linear_bias_correction()
-    bias_correction_writer()
+    # load  brain_age_info_clean.csv in pandas , where age is y, brain_age is y hat.
+    df = pd.read_csv('brain_age_info_clean.csv', index_col=0)
+    df_hc = df[df['MDD_status'] == 0.0]  # filter out MDD patients
+    y_pred = df_hc['brain_age'].to_numpy()
+    y_actual = df_hc['age'].to_numpy()
+    print(f'y_pred{y_pred}')
+    print(f'y_actual{y_actual}')
+    y_pred_unbiased_hc, intercept, slope = bias_correction(y_actual, y_pred)
+
+    # using the intercept and slope from the HC group, correct the brain age of all the samples
+    y_pred_unbiased = (df['brain_age'] - intercept) / (slope + np.finfo(np.float32).eps)
+    df['brain_age_unbiased'] = y_pred_unbiased
+    # write this to the csv file
+    df.to_csv('brain_age_info_clean.csv')
+    print(df)

@@ -222,7 +222,7 @@ def label_writer_batch(filename='brain_age_info.csv', gpu=True):
     csv_file = 'data/filtered_mdd_db_age.csv'
     depressed_dataset = DataStoreDataset(root_dir, csv_file, )
     depressed_dataset.load_data_info(root_dir, csv_file, filter_func=None)
-    dataloader = DataLoader(depressed_dataset, batch_size=1, shuffle=True, collate_fn=custom_collate_fn)
+    dataloader = DataLoader(depressed_dataset, batch_size=1, shuffle=False, collate_fn=custom_collate_fn)
 
     # load the dataset in cuda
 
@@ -234,14 +234,15 @@ def label_writer_batch(filename='brain_age_info.csv', gpu=True):
         writer = csv.writer(csvfile)
         for i, batch in enumerate(dataloader):
             if batch:  # check if batch is not an empty dictionary
-                age = batch['age']
+
                 study = batch['study']
                 filename = batch['filename']
-                mdd_status = batch['mdd_status']
+                mdd_status = int(batch['mdd_status'].item()) if not torch.isnan(batch['mdd_status']) else 'nan'
                 tmp_dirs = batch['tmp_dir']
                 data = nib.load(batch['extracted_path'][0]).get_fdata()
                 brain_age = infer_sample_ukb(data, age[0], model, gpu=gpu)  # set [0] since batch is 1
-                writer.writerow([study, filename, age, brain_age, mdd_status])
+                age = int(batch['age'].item())
+                writer.writerow([study[0], filename[0], age[0].item(), brain_age, mdd_status])
                 print(
                     f"study: {study}, filename: {filename}, age: {age}, brain age: {brain_age}, MDD_status: {mdd_status}")
 
@@ -270,4 +271,31 @@ if __name__ == '__main__':
     # # data = np.random.rand(160, 192, 160)
     # print(infer_sample_ukb(data, 71, model))
     # label_writer()
-    label_writer_batch()
+    # label_writer_batch()
+    import csv
+
+    # Load the CSV file
+    with open('brain_age_info_backup.csv', 'r') as f:
+        reader = csv.reader(f)
+        next(reader)  # Skip the header
+        rows = list(reader)
+
+    # Rewrite the CSV file
+    with open('brain_age_info_clean.csv', 'w', newline='') as f:
+        writer = csv.writer(f)
+        writer.writerow(['study', 'filename', 'age', 'brain_age', 'MDD_status'])  # Write the header
+        for row in rows:
+            study = row[0].replace("[", "").replace("]", "").replace("'", "")
+            filename = row[1].replace("[", "").replace("]", "").replace("'", "")
+            age = int(row[2].replace("tensor(", "").replace(")", "").replace("[", "").replace("]", ""))
+            brain_age = float(row[3])
+            MDD_status = row[4].replace("tensor(", "").replace(")", "").replace("[", "").replace("]", "").replace(".",
+                                                                                                                  "").replace(
+                " ", "").replace(",dtype=torchfloat64", "")
+            if MDD_status == 'nan':
+                MDD_status = 'nan'
+            else:
+                MDD_status = int(MDD_status)
+
+            # Write the modified row back to the CSV
+            writer.writerow([study, filename, age, brain_age, MDD_status])
