@@ -1,6 +1,6 @@
 from matplotlib import pyplot as plt
 from sklearn.linear_model import LinearRegression
-from sklearn.metrics import mean_squared_error
+from sklearn.metrics import mean_squared_error, mean_absolute_error
 import pandas as pd
 
 
@@ -86,7 +86,7 @@ def bias_correction(y: np.ndarray, y_pred: np.ndarray):
         :param y_pred: brain age before bias correction (predictions)
         :return: bias-corrected brain age
     """
-    # Smith2019 bias correction
+    # bias correction
     linear_fit = LinearRegression(fit_intercept=True).fit(
         X=y.reshape(-1, 1),
         y=y_pred
@@ -129,17 +129,33 @@ def bias_correction_writer():
 
 if __name__ == '__main__':
     # load  brain_age_info_clean.csv in pandas , where age is y, brain_age is y hat.
-    df = pd.read_csv('brain_age_info_clean.csv', index_col=0)
+    df = pd.read_csv('brain_age_info.csv', index_col=0)
     df_hc = df[df['MDD_status'] == 0.0]  # filter out MDD patients
-    y_pred = df_hc['brain_age'].to_numpy()
-    y_actual = df_hc['age'].to_numpy()
-    print(f'y_pred{y_pred}')
-    print(f'y_actual{y_actual}')
-    y_pred_unbiased_hc, intercept, slope = bias_correction(y_actual, y_pred)
+    y_pred_hc = df_hc['brain_age'].to_numpy()
+    y_actual_hc = df_hc['age'].to_numpy()
+    print(f'y_pred{y_pred_hc}')
+    print(f'y_actual{y_actual_hc}')
+    y_pred_unbiased_hc, intercept, slope = bias_correction(y_actual_hc, y_pred_hc)
+    # calculate mae for the HC group
+    mae = mean_absolute_error(y_actual_hc, y_pred_unbiased_hc)
+    print(f'MAE for the HC group: {mae}')
 
     # using the intercept and slope from the HC group, correct the brain age of all the samples
-    y_pred_unbiased = (df['brain_age'] - intercept) / (slope + np.finfo(np.float32).eps)
-    df['brain_age_unbiased'] = y_pred_unbiased
+    df_mdd = df[df['MDD_status'] == 1.0]  # filter out MDD patients
+
+    y_pred_unbiased_mdd = (df_mdd['age'] - intercept) / (slope + np.finfo(np.float32).eps)
+    # mae  of the MDD group
+    mae = mean_absolute_error(df_mdd['age'], y_pred_unbiased_mdd)
+    print(f'MAE for the MDD group: {mae}')
+
     # write this to the csv file
-    df.to_csv('brain_age_info_clean.csv')
-    print(df)
+    y_pred_unbiased_all = (df['age'] - intercept) / (slope + np.finfo(np.float32).eps)
+
+    df['brain_age_unbiased'] = y_pred_unbiased_all
+    df.to_csv('brain_age_info_bc.csv', index=False)
+    #
+    # # load csv to check mdd mae again:
+    # df = pd.read_csv('brain_age_info_clean.csv')
+    # df_mdd = df[df['MDD_status'] == 1.0]  # filter out MDD patients
+    # mae = mean_absolute_error(df_mdd['age'], df_mdd['brain_age_unbiased'])
+    # print(f'MAE for the MDD group checked : {mae}')

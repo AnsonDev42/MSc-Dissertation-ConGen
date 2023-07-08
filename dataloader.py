@@ -147,22 +147,6 @@ def custom_collate_fn(batch):
 
 
 if __name__ == '__main__':
-    with zipfile.ZipFile('data/1002490_20252_2_0.zip', 'r') as zip_ref:
-        tmp_dir = tempfile.mkdtemp()
-
-        # Extract the required file into the temporary directory
-        target_file_path = os.path.join(tmp_dir, 'T1/T1_brain_to_MNI.nii.gz')
-        zip_ref.extract('T1/T1_brain_to_MNI.nii.gz', target_file_path)
-
-    # compare checksum with original file
-
-    # dataset = CustomDataset(root_dir='data/preprocessed', csv_file='data/clinical_data.csv')
-    # dataloader = DataLoader(dataset, batch_size=4, shuffle=True, num_workers=4)
-    # dataloader_iter = iter(dataloader)
-    # sample = next(dataloader_iter)
-    # assert sample['h5_data'].shape == (4, 1, 160, 192, 160), f"{sample['h5_data'].size()}"
-    # print(sample['age'])
-    # print(sample['participant_id'])
     HOME = os.environ['HOME']
     root_dir = f'{HOME}/GenScotDepression/data/ukb/imaging/raw/t1_structural_nifti_20252'
     csv_file = 'data/filtered_mdd_db_age.csv'

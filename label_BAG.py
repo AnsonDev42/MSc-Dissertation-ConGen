@@ -170,21 +170,20 @@ def infer_sample_ukb(h5_data, age, model, gpu=False):
     data = data / data.mean()
     data = dpu.crop_center(data, (160, 192, 160))
 
-    print(f'Input data shape: {data.shape}')
+    # print(f'Input data shape: {data.shape}')
     # Move the data from numpy to torch tensor on GPU
     sp = (1, 1) + data.shape
     data = data.reshape(sp)
     # save data into npy file
     # np.save(f'/Users/yaowenshen/Downloads/yaowen_preprocessed.npy', data)
 
-    print(f'Final Input data shape: {data.shape}')
+    # print(f'Final Input data shape: {data.shape}')
     if gpu:
         input_data = torch.tensor(data, dtype=torch.float32).to(device)
     else:
         input_data = torch.tensor(data, dtype=torch.float32)
     # print(f'Input data shape: {input_data.shape}')
     # print(f'dtype: {input_data.dtype}')
-    print(f'data is {data}')
     #
     # with open(f'/Users/yaowenshen/Downloads/{3303915}.npy', 'rb') as f:
     #     samples_arr = np.load(f)
@@ -254,17 +253,16 @@ def label_writer_batch(filename='brain_age_info.csv', gpu=True):
         for i, batch in enumerate(dataloader):
             if batch:  # check if batch is not an empty dictionary
 
-                study = batch['study']
-                filename = batch['filename']
+                study = batch['study'][0]
+                filename = batch['filename'][0]
                 mdd_status = int(batch['mdd_status'].item()) if not torch.isnan(batch['mdd_status']) else 'nan'
                 tmp_dirs = batch['tmp_dir']
                 data = nib.load(batch['extracted_path'][0]).get_fdata()
-                brain_age = infer_sample_ukb(data, age[0], model, gpu=gpu)  # set [0] since batch is 1
                 age = int(batch['age'].item())
-                writer.writerow([study[0], filename[0], age[0].item(), brain_age, mdd_status])
+                brain_age = infer_sample_ukb(data, age, model, gpu=gpu)  # set [0] since batch is 1
+                writer.writerow([study, filename, age, brain_age, mdd_status])
                 print(
                     f"study: {study}, filename: {filename}, age: {age}, brain age: {brain_age}, MDD_status: {mdd_status}")
-
                 # print(f"Age: {age}, Root Directory: {root_dir}, Study: {study}, Filename: {filename}")
                 # print(f"MDD Status: {mdd_status}, Temp Directory: {tmp_dirs}")
 
@@ -287,26 +285,27 @@ if __name__ == '__main__':
     import nibabel as nib
     import tempfile
 
-    full_compressed_path = '/afs/inf.ed.ac.uk/user/s23/s2341683/pycharm_remote_tmp/ConGeLe/data/3303915_20252_2_0.zip'
-
-    with zipfile.ZipFile(full_compressed_path, 'r') as zip_ref:
-        # Create a temporary directory
-        tmp_dir = tempfile.mkdtemp(dir="/tmp/s2341683")
-
-        # Extract the required file into the temporary directory
-        target_file_path = os.path.join(tmp_dir, 'T1/T1_brain_to_MNI.nii.gz')
-        zip_ref.extract('T1/T1_brain_to_MNI.nii.gz', tmp_dir)
-
-    print(f'target_file_path: {target_file_path}')  # target for unzip
-    print(f'tmp_dir: {tmp_dir}')
-
-    data = nib.load(target_file_path).get_fdata()
-    # save data
-    # np.save(f'/Users/yaowenshen/Downloads/yaowen_unprocessed.npy', data)
-    # print(data.shape)
-    x = infer_sample_ukb(data, 72, sfcn_loader(gpu=True), gpu=True)
-    print(x)
-    exit(0)
+    #
+    # full_compressed_path = '/afs/inf.ed.ac.uk/user/s23/s2341683/pycharm_remote_tmp/ConGeLe/data/3303915_20252_2_0.zip'
+    #
+    # with zipfile.ZipFile(full_compressed_path, 'r') as zip_ref:
+    #     # Create a temporary directory
+    #     tmp_dir = tempfile.mkdtemp(dir="/tmp/s2341683")
+    #
+    #     # Extract the required file into the temporary directory
+    #     target_file_path = os.path.join(tmp_dir, 'T1/T1_brain_to_MNI.nii.gz')
+    #     zip_ref.extract('T1/T1_brain_to_MNI.nii.gz', tmp_dir)
+    #
+    # print(f'target_file_path: {target_file_path}')  # target for unzip
+    # print(f'tmp_dir: {tmp_dir}')
+    #
+    # data = nib.load(target_file_path).get_fdata()
+    # # save data
+    # # np.save(f'/Users/yaowenshen/Downloads/yaowen_unprocessed.npy', data)
+    # # print(data.shape)
+    # x = infer_sample_ukb(data, 72, sfcn_loader(gpu=True), gpu=True)
+    # print(x)
+    # exit(0)
 
     # load from T1/T1_brain_to_MNI.nii.gz to numpy array
     # using bash to ls the file under folders '/tmp/tmptzlmab22/T1/    #
@@ -318,7 +317,8 @@ if __name__ == '__main__':
     # # data = np.random.rand(160, 192, 160)
     # print(infer_sample_ukb(data, 71, model))
     # label_writer()
-    # label_writer_batch()
+    label_writer_batch()
+    exit(0)
     import csv
 
     # Load the CSV file

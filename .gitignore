@@ -165,3 +165,5 @@ data/*
 !data/*.py
 
 .idea/
+
+pub-CVAE-MRI-ASD/tf_weights/VAE_weights/
