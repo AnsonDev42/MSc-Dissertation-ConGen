@@ -1,5 +1,7 @@
 import os
 import shutil
+import zipfile
+
 import nibabel as nib
 
 import h5py, csv
@@ -73,15 +75,15 @@ def sfcn_loader(gpu=False, eval=True, weights='./brain_age/run_20190719_00_epoch
     :param gpu: use torch gpu or not
     :return: the sfcn model with pretrained weight
     """
+    model = SFCN()
+    model = torch.nn.DataParallel(model)
     if not gpu:
-        model = SFCN()
-        model = torch.nn.DataParallel(model)
         if eval:
             model.eval()
             model.load_state_dict(torch.load(weights, map_location='cpu'))
     else:
-        model = SFCN()
-        model = torch.nn.DataParallel(model)
+        if eval:
+            model.eval()
         fp_ = './brain_age/run_20190719_00_epoch_best_mae.p'
         model.load_state_dict(torch.load(fp_))
         model.to(device)
@@ -153,7 +155,7 @@ def infer_sample_ukb(h5_data, age, model, gpu=False):
     # Example
 
     # Example data: some random brain in the MNI152 1mm std space
-    data = h5_data
+    data = np.array(h5_data)
     label = np.array([age, ])  # Assuming the random subject is 71.3-year-old.
     # Transforming the age to soft label (probability distribution)
     print(f'Label: {label[0]}')
@@ -172,6 +174,9 @@ def infer_sample_ukb(h5_data, age, model, gpu=False):
     # Move the data from numpy to torch tensor on GPU
     sp = (1, 1) + data.shape
     data = data.reshape(sp)
+    # save data into npy file
+    # np.save(f'/Users/yaowenshen/Downloads/yaowen_preprocessed.npy', data)
+
     print(f'Final Input data shape: {data.shape}')
     if gpu:
         input_data = torch.tensor(data, dtype=torch.float32).to(device)
@@ -179,6 +184,20 @@ def infer_sample_ukb(h5_data, age, model, gpu=False):
         input_data = torch.tensor(data, dtype=torch.float32)
     # print(f'Input data shape: {input_data.shape}')
     # print(f'dtype: {input_data.dtype}')
+    print(f'data is {data}')
+    #
+    # with open(f'/Users/yaowenshen/Downloads/{3303915}.npy', 'rb') as f:
+    #     samples_arr = np.load(f)
+    #     print(f'yf data: {samples_arr}')
+    #     assert samples_arr.shape == data.shape, 'shape not match'
+    #     print(f'sample 1d:{str(samples_arr[0][0].flatten().numpy())}')
+    #     print(f'data 1d:{str(data[0][0].flatten().numpy())}')
+    #     assert (samples_arr == data).all(), 'data not match'
+
+    # exit()
+
+    # compare samples_arr with data
+    # print(f'samples_arr.shape: {samples_arr.shape}')
 
     # Evaluation
     with torch.no_grad():
@@ -253,6 +272,7 @@ def label_writer_batch(filename='brain_age_info.csv', gpu=True):
                 for tmp_dir in tmp_dirs:
                     if tmp_dir is not None:
                         shutil.rmtree(tmp_dir)
+                        print(f'Temporary directory removed: {tmp_dir}')
 
     print("brain age info file written")
 
@@ -261,6 +281,33 @@ if __name__ == '__main__':
     # random seed
     torch.manual_seed(0)
     np.random.seed(0)
+    # with open(f'/Users/yaowenshen/Downloads/{3303915}.npy', 'rb') as f:
+    #     samples_arr = np.load(f)
+    # data = samples_arr
+    import nibabel as nib
+    import tempfile
+
+    full_compressed_path = '/afs/inf.ed.ac.uk/user/s23/s2341683/pycharm_remote_tmp/ConGeLe/data/3303915_20252_2_0.zip'
+
+    with zipfile.ZipFile(full_compressed_path, 'r') as zip_ref:
+        # Create a temporary directory
+        tmp_dir = tempfile.mkdtemp(dir="/tmp/s2341683")
+
+        # Extract the required file into the temporary directory
+        target_file_path = os.path.join(tmp_dir, 'T1/T1_brain_to_MNI.nii.gz')
+        zip_ref.extract('T1/T1_brain_to_MNI.nii.gz', tmp_dir)
+
+    print(f'target_file_path: {target_file_path}')  # target for unzip
+    print(f'tmp_dir: {tmp_dir}')
+
+    data = nib.load(target_file_path).get_fdata()
+    # save data
+    # np.save(f'/Users/yaowenshen/Downloads/yaowen_unprocessed.npy', data)
+    # print(data.shape)
+    x = infer_sample_ukb(data, 72, sfcn_loader(gpu=True), gpu=True)
+    print(x)
+    exit(0)
+
     # load from T1/T1_brain_to_MNI.nii.gz to numpy array
     # using bash to ls the file under folders '/tmp/tmptzlmab22/T1/    #
     # data = nib.load('/tmp/tmptzlmab22/T1/T1_brain_to_MNI.nii.gz')
