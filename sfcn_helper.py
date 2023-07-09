@@ -143,7 +143,7 @@ if __name__ == '__main__':
     # using the intercept and slope from the HC group, correct the brain age of all the samples
     df_mdd = df[df['MDD_status'] == 1.0]  # filter out MDD patients
 
-    y_pred_unbiased_mdd = (df_mdd['age'] - intercept) / (slope + np.finfo(np.float32).eps)
+    y_pred_unbiased_mdd = (df_mdd['brain_age'] - intercept) / (slope + np.finfo(np.float32).eps)
     # mae  of the MDD group
     mae = mean_absolute_error(df_mdd['age'], y_pred_unbiased_mdd)
     print(f'MAE for the MDD group: {mae}')
