@@ -101,12 +101,21 @@ class DataStoreDataset(CustomDataset):
 
         try:
             extracted_path, tmp_dir = self._extract_required_file(row)
+            if extracted_path is None or tmp_dir is None:  # check for None values
+                return None
             age = row['f.21003.2.0']
+            # Load the image data and pre-process
+            data = nib.load(extracted_path).get_fdata()
+            data = data.astype(np.float32)
+            data = data / data.mean()
+            data = dpu.crop_center(data, (160, 192, 160))
+            data = data.reshape([1, 160, 192, 160])
+
         except Exception as e:
-            # print(e)
+            print(f'get item exception:{e}')
             return None
 
-        sample = {'age': age, 'root_dir': self.root_dir, 'study': 'ukb',
+        sample = {'image_data': data, 'age': age, 'root_dir': self.root_dir, 'study': 'ukb',
                   'filename': row['filename'], 'mdd_status': row['depression'], 'tmp_dir': tmp_dir,
                   'extracted_path': extracted_path}
 
