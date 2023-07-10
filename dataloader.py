@@ -10,6 +10,8 @@ import torch
 from torch.utils.data import Dataset
 from torch.utils.data import DataLoader
 import h5py
+import nibabel as nib
+from dp_model import dp_utils as dpu
 
 
 class CustomDataset(Dataset):
@@ -119,7 +121,7 @@ class DataStoreDataset(CustomDataset):
                 writer = csv.writer(csvfile)
                 writer.writerow([zip_filename])
             # raise Exception(f"Zip file not found: {full_compressed_path}")
-            return None
+            return None, None
 
         with zipfile.ZipFile(full_compressed_path, 'r') as zip_ref:
             if 'T1/T1_brain_to_MNI.nii.gz' not in zip_ref.namelist():
@@ -127,7 +129,7 @@ class DataStoreDataset(CustomDataset):
                     writer = csv.writer(csvfile)
                     writer.writerow([zip_filename])
                 # raise Exception(f"Required file not found in zip archive: {full_compressed_path}")
-                return None
+                return None, None
 
             # Create a temporary directory
             tmp_dir = tempfile.mkdtemp(dir="/disk/scratch/s2341683")
