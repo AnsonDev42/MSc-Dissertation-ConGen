@@ -16,10 +16,14 @@ from sfcn_helper import get_bin_range_step
 
 
 class CustomDataset(Dataset):
-    def __init__(self, root_dir, csv_file):
+    def __init__(self, root_dir, csv_file, on_the_fly=True):
         self.root_dir = root_dir
         self.data_info = self.load_data_info(root_dir, csv_file)
         self.missing_file_log = 'missing_files.csv'
+        self.extract_dir = "/disk/scratch/s2341683/extracted_files"
+        self.on_the_fly = on_the_fly
+        if not os.path.exists(self.extract_dir):
+            os.makedirs(self.extract_dir)
 
     def load_data_info(self, root_dir, csv_file):
         data_info = pd.read_csv(csv_file)
@@ -41,6 +45,25 @@ class CustomDataset(Dataset):
         compressed_path = os.path.join(self.root_dir, study, str(participant_id))
         compressed_path = compressed_path + f'/{participant_id}_T1w.zip'
         return compressed_path
+
+    def _extract_required_file(self, row):
+        zip_filename = row['filename']
+        full_compressed_path = os.path.join(self.root_dir, str(zip_filename))
+
+        if not os.path.exists(full_compressed_path):
+            # ... your error handling ...
+            return None, None
+
+        # Define where to store or find the extracted file
+        extracted_file_path = os.path.join(self.extract_dir, 'T1/T1_brain_to_MNI.nii.gz')
+
+        if not os.path.exists(extracted_file_path):
+            # If the file is not already extracted, extract it
+            with zipfile.ZipFile(full_compressed_path, 'r') as zip_ref:
+                # ... your error handling ...
+                zip_ref.extract('T1/T1_brain_to_MNI.nii.gz', self.extract_dir)
+
+        return extracted_file_path, None  # We're not using a temporary directory anymore
 
     def __getitem__(self, idx):
         if torch.is_tensor(idx):
@@ -102,30 +125,47 @@ class DataStoreDataset(CustomDataset):
 
         try:
             extracted_path, tmp_dir = self._extract_required_file(row)
-            if extracted_path is None or tmp_dir is None:  # check for None values
+            if extracted_path is None:  # check for None values
                 return None
             age = row['f.21003.2.0']
             # Load the image data and pre-process
-            data = nib.load(extracted_path).get_fdata()
-            data = data.astype(np.float32)
-            data = data / data.mean()
-            data = dpu.crop_center(data, (160, 192, 160))
-            data = data.reshape([1, 160, 192, 160])
-            # data = torch.Tensor(data).to(dtype=torch.float32, device=self.device)
-            label = np.array([age, ])
-            bin_range, bin_step = get_bin_range_step(age=label)
-            labels, _ = dpu.num2vect(label, bin_range, bin_step, sigma=1.0)
-            # labels = labels.to(dtype=torch.float32, device=self.device)
+            data, labels = self.preprocessing(extracted_path, age)
 
         except Exception as e:
-            print(f'get item exception:{e}')
-            return None
+            print(f'get item exception in {extracted_path}:{e},try to remove and unzip again')
+            self._cleanup_temp_dir(tmp_dir)
+            extracted_path, tmp_dir = self._extract_required_file(row)
+            if extracted_path is None:  # check for None values
+                return None
+            age = row['f.21003.2.0']
+            data, labels = self.preprocessing(extracted_path, age)
 
         sample = {'image_data': data, 'age': age, 'root_dir': self.root_dir, 'study': 'ukb',
-                  'filename': row['filename'], 'mdd_status': row['depression'], 'tmp_dir': tmp_dir,
+                  'filename': row['filename'], 'mdd_status': row['depression'],
                   'extracted_path': extracted_path, 'age_bin': labels}
 
+        # remove the temporary files
+        if self.on_the_fly:
+            self._cleanup_temp_dir(tmp_dir)
+
         return sample
+
+    def preprocessing(self, extracted_path, age):
+        data = nib.load(extracted_path).get_fdata()
+        data = data.astype(np.float32)
+        data = data / data.mean()
+        data = dpu.crop_center(data, (160, 192, 160))
+        data = data.reshape([1, 160, 192, 160])
+        label = np.array([age, ])
+        bin_range, bin_step = get_bin_range_step(age=label)
+        labels, _ = dpu.num2vect(label, bin_range, bin_step, sigma=1.0)
+        return data, labels
+
+    def _cleanup_temp_dir(self, tmp_dir):
+        try:
+            shutil.rmtree(tmp_dir)
+        except Exception as e:
+            print(f'Error while cleaning up temporary directory: {e}')
 
     def _extract_required_file(self, row):
         zip_filename = row['filename']
@@ -137,7 +177,14 @@ class DataStoreDataset(CustomDataset):
                 writer.writerow([zip_filename])
             # raise Exception(f"Zip file not found: {full_compressed_path}")
             return None, None
+        # filename is xxxx.zip, so the extracted folder name is xxxx
+        extracted_folder_name = zip_filename.split('.')[0]
+        extracted_file_path = os.path.join(self.extract_dir, f'{extracted_folder_name}/T1/T1_brain_to_MNI.nii.gz')
 
+        if os.path.exists(extracted_file_path):
+            return extracted_file_path, os.path.join(self.extract_dir, f'{extracted_folder_name}')
+
+        # if not exists, check availability and extract it
         with zipfile.ZipFile(full_compressed_path, 'r') as zip_ref:
             if 'T1/T1_brain_to_MNI.nii.gz' not in zip_ref.namelist():
                 with open(self.missing_file_log, 'a') as csvfile:
@@ -147,8 +194,8 @@ class DataStoreDataset(CustomDataset):
                 return None, None
 
             # Create a temporary directory
-            tmp_dir = tempfile.mkdtemp(dir="/disk/scratch/s2341683")
-
+            # tmp_dir = tempfile.mkdtemp(dir="/disk/scratch/s2341683")
+            tmp_dir = os.path.join(self.extract_dir, f'{extracted_folder_name}')
             # Extract the required file into the temporary directory
             target_file_path = os.path.join(tmp_dir, 'T1/T1_brain_to_MNI.nii.gz')
             zip_ref.extract('T1/T1_brain_to_MNI.nii.gz', tmp_dir)
