@@ -17,7 +17,10 @@ import nibabel as nib
 from dp_model import dp_utils as dpu
 from sfcn_helper import get_bin_range_step
 
-writer = SummaryWriter('runs/experiment_name')
+# current time in ddmm_hhmm format
+now = datetime.datetime.now()
+time_str = now.strftime("%d%m_%H%M")
+writer = SummaryWriter(f'runs/sfcn_train_{time_str}')
 
 
 def transform_labels_to_distribution(labels_batch, sigma, device):
@@ -34,7 +37,7 @@ def transform_labels_to_distribution(labels_batch, sigma, device):
 
 def train_sfcn():
     # Use GPU for training if available.
-    device = torch.device('cuda:5' if torch.cuda.is_available() else 'cpu')
+    device = torch.device('cuda:1' if torch.cuda.is_available() else 'cpu')
     gpu = True
     if str(device) == 'cpu':
         gpu = False
@@ -42,9 +45,7 @@ def train_sfcn():
     else:
         print('Using GPU for training')
 
-    # sfcn = sfcn_loader(gpu=False, eval=False, weights='./brain_age/run_20190719_00_epoch_best_mae.p')
-
-    sfcn = sfcn_loader(gpu=gpu, eval=False, weights='./brain_age/run_20190719_00_epoch_best_mae.p')
+    sfcn = sfcn_loader(gpu=device, eval=False, weights='./brain_age/run_20190719_00_epoch_best_mae.p')
     # load the dataset
     HOME = os.environ['HOME']
     root_dir = f'{HOME}/GenScotDepression/data/ukb/imaging/raw/t1_structural_nifti_20252'
@@ -78,61 +79,58 @@ def train_sfcn():
         print('EPOCH {}:'.format(epoch_number + 1))
         running_loss = 0.0
         last_loss = 0.0
+        num_batches = 0
         for i, batch in enumerate(dataloader):
             if (batch is None) or 'age_bin' not in batch.keys():
                 print('Batch is None or age_bin is not in batch.keys()')
                 continue
-                # Get the inputs
-            # labels = transform_labels_to_distribution(batch['age'], sigma=1, device=device)
             inputs = torch.Tensor(batch['image_data']).to(dtype=torch.float32, device=device)
             labels = torch.Tensor(batch['age_bin']).to(dtype=torch.float32, device=device)
 
-            # inputs = torch.Tensor(batch['image_data']).to(dtype=torch.float32, device=device)
-
             optimizer.zero_grad()
             outputs = sfcn.module(inputs)
-            output_tensor = outputs[0].reshape([batch['age'].shape[0], -1])
+            output_tensor = outputs[0].reshape([batch['age_bin'].shape[0], -1])
             loss = dpl.my_KLDivLoss(output_tensor, labels)
             loss.backward()
             optimizer.step()
 
             running_loss += loss.item()
-            if i % 50 == 49:  # print every 100 mini-batches
-                last_loss = running_loss / 50  # loss per batch
+            num_batches += 1
+            if i % 20 == 19:  # print every 100 mini-batches
+                last_loss = running_loss / num_batches
                 print('  batch {} loss: {}'.format(i + 1, last_loss))
                 tb_x = epoch_number * len(dataloader) + i + 1
                 writer.add_scalar('Loss/train', last_loss, tb_x)
-                running_loss = 0.
+                writer.flush()
 
         # Print statistics
-        print(f'Epoch: {epoch + 1}/{epochs}, Loss: {last_loss:.4f}')
-        writer.add_scalar('training loss', loss, epoch)
-        # After training for one epoch, we evaluate the model on the validation set
-        running_vloss = 0.
-        sfcn.eval()  # Set the model to evaluation mode
+        avg_epoch_loss = running_loss / num_batches
+        print(f'Epoch: {epoch + 1}/{epochs}, Loss: {avg_epoch_loss:.4f}')
+        writer.add_scalar('training loss', avg_epoch_loss, epoch)
+        writer.flush()
+        running_vloss = 0.0
+        num_val_batches = 0
         with torch.no_grad():  # Do not calculate gradients since we are not training
             for i, batch in enumerate(dataloader_val):
                 if batch is None:
                     continue
-                # create np.array of the labels filled with zeros
-                # labels = transform_labels_to_distribution(batch['age'], sigma=1, device=device)
-                # inputs, labels = batch['image_data'], batch['age_bin']
+
                 inputs = torch.Tensor(batch['image_data']).to(dtype=torch.float32, device=device)
                 labels = torch.Tensor(batch['age_bin']).to(dtype=torch.float32, device=device)
 
-                # inputs = torch.Tensor(inputs).to(dtype=torch.float32, device=device)
-                # labels = labels.to(dtype=torch.float32, device=device)
-
                 # Forward pass # output is a list
                 outputs = sfcn.module(inputs)
-                output_tensor = outputs[0].reshape([batch['age'].shape[0], -1])
-                # use it in the loss computation
+                output_tensor = outputs[0].reshape([batch['age_bin'].shape[0], -1])
+
+                # Compute loss
                 loss = dpl.my_KLDivLoss(output_tensor, labels)
                 running_vloss += loss.item()
+                num_val_batches += 1
 
-            avg_val_loss = running_vloss / (i + 1)
+            avg_val_loss = running_vloss / num_val_batches  # average validation loss
+            writer.add_scalar('validation loss', avg_val_loss, epoch)
             writer.add_scalars('Training vs. Validation Loss',
-                               {'Training': last_loss, 'Validation': avg_val_loss},
+                               {'Training': avg_epoch_loss, 'Validation': avg_val_loss},
                                epoch_number + 1)
             writer.flush()
 
