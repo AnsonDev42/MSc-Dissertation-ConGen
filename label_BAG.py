@@ -17,7 +17,7 @@ import torch
 import torch.nn.functional as F
 from sfcn_helper import get_bin_range_step
 
-device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+device = torch.device('cuda:5' if torch.cuda.is_available() else 'cpu')
 
 
 def label_writer(filename='brain_age_info.csv', gpu=False):
@@ -69,7 +69,7 @@ def label_writer(filename='brain_age_info.csv', gpu=False):
     print("brain age info file written")
 
 
-def sfcn_loader(gpu=False, eval=True, weights='./brain_age/run_20190719_00_epoch_best_mae.p'):
+def sfcn_loader(gpu=True, eval=False, weights='./brain_age/run_20190719_00_epoch_best_mae.p'):
     """
     load the sfcn model from han's code/weight and return the model
     :param gpu: use torch gpu or not
@@ -84,8 +84,8 @@ def sfcn_loader(gpu=False, eval=True, weights='./brain_age/run_20190719_00_epoch
     else:
         if eval:
             model.eval()
-        fp_ = './brain_age/run_20190719_00_epoch_best_mae.p'
-        model.load_state_dict(torch.load(fp_))
+            fp_ = weights
+            model.load_state_dict(torch.load(fp_))
         model.to(device)
     return model
 
@@ -169,14 +169,11 @@ def infer_sample_ukb(h5_data, age, model, gpu=False):
     data = data.astype(np.float32)
     data = data / data.mean()
     data = dpu.crop_center(data, (160, 192, 160))
-
+    #
     # print(f'Input data shape: {data.shape}')
     # Move the data from numpy to torch tensor on GPU
     sp = (1, 1) + data.shape
     data = data.reshape(sp)
-    # save data into npy file
-    # np.save(f'/Users/yaowenshen/Downloads/yaowen_preprocessed.npy', data)
-
     # print(f'Final Input data shape: {data.shape}')
     if gpu:
         input_data = torch.tensor(data, dtype=torch.float32).to(device)
@@ -246,16 +243,12 @@ def label_writer_batch(filename='brain_age_info.csv', gpu=True):
 
     # dataset = CustomDataset(root_dir='data/preprocessed', csv_file='data/clinical_data.csv')
     # dataloader = DataLoader(dataset, batch_size=1, shuffle=False, num_workers=4)
-    dataloader_iter = iter(dataloader)
 
     with open(filename, 'a') as csvfile:
         writer = csv.writer(csvfile)
         for i, batch in enumerate(dataloader):
             if batch:  # check if batch is not an empty dictionary
-
-                study = batch['study'][0]
-                filename = batch['filename'][0]
-                mdd_status = int(batch['mdd_status'].item()) if not torch.isnan(batch['mdd_status']) else 'nan'
+                filename = batch['filename']
                 tmp_dirs = batch['tmp_dir']
                 data = nib.load(batch['extracted_path'][0]).get_fdata()
                 age = int(batch['age'].item())
@@ -285,39 +278,18 @@ if __name__ == '__main__':
     import nibabel as nib
     import tempfile
 
-    #
-    # full_compressed_path = '/afs/inf.ed.ac.uk/user/s23/s2341683/pycharm_remote_tmp/ConGeLe/data/3303915_20252_2_0.zip'
-    #
-    # with zipfile.ZipFile(full_compressed_path, 'r') as zip_ref:
-    #     # Create a temporary directory
-    #     tmp_dir = tempfile.mkdtemp(dir="/tmp/s2341683")
-    #
-    #     # Extract the required file into the temporary directory
-    #     target_file_path = os.path.join(tmp_dir, 'T1/T1_brain_to_MNI.nii.gz')
-    #     zip_ref.extract('T1/T1_brain_to_MNI.nii.gz', tmp_dir)
-    #
-    # print(f'target_file_path: {target_file_path}')  # target for unzip
-    # print(f'tmp_dir: {tmp_dir}')
-    #
-    # data = nib.load(target_file_path).get_fdata()
-    # # save data
-    # # np.save(f'/Users/yaowenshen/Downloads/yaowen_unprocessed.npy', data)
-    # # print(data.shape)
-    # x = infer_sample_ukb(data, 72, sfcn_loader(gpu=True), gpu=True)
-    # print(x)
-    # exit(0)
-
     # load from T1/T1_brain_to_MNI.nii.gz to numpy array
     # using bash to ls the file under folders '/tmp/tmptzlmab22/T1/    #
     # data = nib.load('/tmp/tmptzlmab22/T1/T1_brain_to_MNI.nii.gz')
     # data = data / data.mean()
     # data = dpu.crop_center(data, (160, 192, 160))
     #
-    # model = sfcn_loader()
-    # # data = np.random.rand(160, 192, 160)
-    # print(infer_sample_ukb(data, 71, model))
+    model = sfcn_loader(gpu=True, weights='best_model.pth')  #
+    # data = np.random.rand(160, 192, 160)
+    data = np.random.rand(180, 200, 180)
+    print(infer_sample_ukb(data, 71, model, gpu=True))
     # label_writer()
-    label_writer_batch()
+    # label_writer_batch()
     exit(0)
     import csv
 

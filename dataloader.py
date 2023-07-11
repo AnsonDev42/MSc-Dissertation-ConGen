@@ -12,6 +12,7 @@ from torch.utils.data import DataLoader
 import h5py
 import nibabel as nib
 from dp_model import dp_utils as dpu
+from sfcn_helper import get_bin_range_step
 
 
 class CustomDataset(Dataset):
@@ -110,6 +111,11 @@ class DataStoreDataset(CustomDataset):
             data = data / data.mean()
             data = dpu.crop_center(data, (160, 192, 160))
             data = data.reshape([1, 160, 192, 160])
+            # data = torch.Tensor(data).to(dtype=torch.float32, device=self.device)
+            label = np.array([age, ])
+            bin_range, bin_step = get_bin_range_step(age=label)
+            labels, _ = dpu.num2vect(label, bin_range, bin_step, sigma=1.0)
+            # labels = labels.to(dtype=torch.float32, device=self.device)
 
         except Exception as e:
             print(f'get item exception:{e}')
@@ -117,7 +123,7 @@ class DataStoreDataset(CustomDataset):
 
         sample = {'image_data': data, 'age': age, 'root_dir': self.root_dir, 'study': 'ukb',
                   'filename': row['filename'], 'mdd_status': row['depression'], 'tmp_dir': tmp_dir,
-                  'extracted_path': extracted_path}
+                  'extracted_path': extracted_path, 'age_bin': labels}
 
         return sample
 
