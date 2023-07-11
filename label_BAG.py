@@ -5,6 +5,8 @@ import zipfile
 import nibabel as nib
 
 import h5py, csv
+import pandas as pd
+
 from dataloader import CustomDataset, DataStoreDataset, custom_collate_fn
 from torch.utils.data import DataLoader
 import matplotlib.pyplot as plt
@@ -17,7 +19,7 @@ import torch
 import torch.nn.functional as F
 from sfcn_helper import get_bin_range_step
 
-device = torch.device('cuda:5' if torch.cuda.is_available() else 'cpu')
+device = torch.device('cuda:1' if torch.cuda.is_available() else 'cpu')
 
 
 def label_writer(filename='brain_age_info.csv', gpu=False):
@@ -69,7 +71,7 @@ def label_writer(filename='brain_age_info.csv', gpu=False):
     print("brain age info file written")
 
 
-def sfcn_loader(gpu=True, eval=False, weights='./brain_age/run_20190719_00_epoch_best_mae.p'):
+def sfcn_loader(gpu=None, eval=False, weights='./brain_age/run_20190719_00_epoch_best_mae.p'):
     """
     load the sfcn model from han's code/weight and return the model
     :param gpu: use torch gpu or not
@@ -77,17 +79,18 @@ def sfcn_loader(gpu=True, eval=False, weights='./brain_age/run_20190719_00_epoch
     """
     model = SFCN()
     model = torch.nn.DataParallel(model)
+    device = gpu
     if eval:
         model.eval()
-    if not gpu:
+    if str(gpu) == 'cpu':
         if weights:
-            print(f'Loading weights from {weights}')
+            print(f'Loading weights in {str(device)}from {weights}')
             model.load_state_dict(torch.load(weights, map_location='cpu'))
     else:
         if weights:
-            print(f'Loading weights from {weights}')
+            print(f'Loading weights in {str(device)}from {weights}')
             model.load_state_dict(torch.load(weights))
-        model.to(device)
+        model.to(gpu)
     return model
 
 
@@ -182,6 +185,7 @@ def infer_sample_ukb(h5_data, age, model, gpu=False):
         input_data = torch.tensor(data, dtype=torch.float32)
     # print(f'Input data shape: {input_data.shape}')
     # print(f'dtype: {input_data.dtype}')
+
     #
     # with open(f'/Users/yaowenshen/Downloads/{3303915}.npy', 'rb') as f:
     #     samples_arr = np.load(f)
@@ -231,7 +235,7 @@ def label_writer_batch(filename='brain_age_info.csv', gpu=True):
         #     print("brain age info file not overwritten")
         #     exit(0)
     # load the mdoel
-    model = sfcn_loader(gpu=gpu)
+    model = sfcn_loader(gpu=gpu, eval=True, model_path='best_model.pth')
     # load the dataset
     HOME = os.environ['HOME']
     root_dir = f'{HOME}/GenScotDepression/data/ukb/imaging/raw/t1_structural_nifti_20252'
@@ -240,33 +244,82 @@ def label_writer_batch(filename='brain_age_info.csv', gpu=True):
     depressed_dataset.load_data_info(root_dir, csv_file, filter_func=None)
     dataloader = DataLoader(depressed_dataset, batch_size=1, shuffle=False, collate_fn=custom_collate_fn)
 
-    # load the dataset in cuda
-
-    # dataset = CustomDataset(root_dir='data/preprocessed', csv_file='data/clinical_data.csv')
-    # dataloader = DataLoader(dataset, batch_size=1, shuffle=False, num_workers=4)
-
     with open(filename, 'a') as csvfile:
         writer = csv.writer(csvfile)
         for i, batch in enumerate(dataloader):
-            if batch:  # check if batch is not an empty dictionary
-                filename = batch['filename']
-                tmp_dirs = batch['tmp_dir']
-                data = nib.load(batch['extracted_path'][0]).get_fdata()
-                age = int(batch['age'].item())
-                brain_age = infer_sample_ukb(data, age, model, gpu=gpu)  # set [0] since batch is 1
-                writer.writerow([study, filename, age, brain_age, mdd_status])
-                print(
-                    f"study: {study}, filename: {filename}, age: {age}, brain age: {brain_age}, MDD_status: {mdd_status}")
-                # print(f"Age: {age}, Root Directory: {root_dir}, Study: {study}, Filename: {filename}")
-                # print(f"MDD Status: {mdd_status}, Temp Directory: {tmp_dirs}")
+            if batch is None:  # check if batch is not an empty dictionary
+                continue
+            filename = batch['filename']
+            tmp_dirs = batch['tmp_dir']
+            data = nib.load(batch['extracted_path'][0]).get_fdata()
+            age = int(batch['age'].item())
+            brain_age = infer_sample_ukb(data, age, model, gpu=gpu)  # set [0] since batch is 1
+            writer.writerow([study, filename, age, brain_age, mdd_status])
+            print(
+                f"study: {study}, filename: {filename}, age: {age}, brain age: {brain_age}, MDD_status: {mdd_status}")
+            # print(f"Age: {age}, Root Directory: {root_dir}, Study: {study}, Filename: {filename}")
+            # print(f"MDD Status: {mdd_status}, Temp Directory: {tmp_dirs}")
 
-                # Clean up the batch of temporary files
-                for tmp_dir in tmp_dirs:
-                    if tmp_dir is not None:
-                        shutil.rmtree(tmp_dir)
-                        print(f'Temporary directory removed: {tmp_dir}')
+            # Clean up the batch of temporary files
+            for tmp_dir in tmp_dirs:
+                if tmp_dir is not None:
+                    shutil.rmtree(tmp_dir)
+                    print(f'Temporary directory removed: {tmp_dir}')
 
     print("brain age info file written")
+
+
+def label_data_batch_my_model():
+    gpu = 'cuda:1' if torch.cuda.is_available() else 'cpu'
+    device = torch.device(gpu)
+    sfcn = sfcn_loader(gpu=gpu, eval=True, weights='best_model.pth')
+    # load the dataset
+    HOME = os.environ['HOME']
+    root_dir = f'{HOME}/GenScotDepression/data/ukb/imaging/raw/t1_structural_nifti_20252'
+    csv_file = 'data/filtered_mdd_db_age.csv'
+    depressed_dataset = DataStoreDataset(root_dir, csv_file, )
+    depressed_dataset.load_data_info(root_dir, csv_file, filter_func=None)
+    dataloader = DataLoader(depressed_dataset, batch_size=1, shuffle=False, collate_fn=custom_collate_fn)
+
+    # using pd create a dataframe
+    df = pd.DataFrame(columns=['study', 'filename', 'age', 'brain_age', 'MDD_status'])
+    with torch.no_grad():
+        for i, batch in enumerate(dataloader):
+            if batch is None:
+                print('Batch is None')
+                continue
+            
+            inputs = torch.Tensor(batch['image_data']).to(dtype=torch.float32, device=device)
+            labels = torch.Tensor(batch['age_bin']).to(dtype=torch.float32, device=device)
+            filename = batch['filename'][0]
+            mdd_status = batch['mdd_status'][0]
+            if np.isnan(mdd_status):
+                mdd_status = np.nan  # or any other value or handling that makes sense in your case
+            else:
+                mdd_status = int(mdd_status)
+            bc = batch['bc']
+            study = batch['study'][0]
+            age = int(batch['age'].item())
+
+            output = sfcn.module(inputs)
+
+            # output_tensor = outputs[0].reshape([batch['age_bin'].shape[0], -1])
+            # loss = dpl.my_KLDivLoss(output_tensor, labels)
+            # Output, loss, visualisation
+            x = output[0].reshape([1, -1])
+            if str(gpu) != 'cpu':
+                x = x.cpu()
+                bc = bc.cpu()
+            # Prediction
+            x = x.numpy().reshape(-1)
+            bc = bc.numpy().reshape(-1)
+            prob = np.exp(x)
+            pred = prob @ bc
+            print(f"study: {study}, filename: {filename}, age: {age}, brain age: {pred}, MDD_status: {mdd_status}")
+            new_row = {'study': study, 'filename': filename, 'age': age, 'brain_age': pred, 'MDD_status': mdd_status}
+            df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
+
+    df.to_csv('brain_age_info_retrained_sfcn_ttt.csv')
 
 
 if __name__ == '__main__':
@@ -277,20 +330,14 @@ if __name__ == '__main__':
     #     samples_arr = np.load(f)
     # data = samples_arr
     import nibabel as nib
-    import tempfile
 
-    # load from T1/T1_brain_to_MNI.nii.gz to numpy array
-    # using bash to ls the file under folders '/tmp/tmptzlmab22/T1/    #
-    # data = nib.load('/tmp/tmptzlmab22/T1/T1_brain_to_MNI.nii.gz')
-    # data = data / data.mean()
-    # data = dpu.crop_center(data, (160, 192, 160))
-    #
-    model = sfcn_loader(gpu=True, weights='best_model.pth')  #
-    # data = np.random.rand(160, 192, 160)
-    data = np.random.rand(180, 200, 180)
-    print(infer_sample_ukb(data, 71, model, gpu=True))
+    # model = sfcn_loader(gpu=True, weights='best_model.pth')  #
+    # data = np.random.rand(180, 200, 180)
+    # print(infer_sample_ukb(data, 71, model, gpu=True))
     # label_writer()
     # label_writer_batch()
+
+    label_data_batch_my_model()
     exit(0)
     import csv
 
