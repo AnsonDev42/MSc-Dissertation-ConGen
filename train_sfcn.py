@@ -44,7 +44,7 @@ def train_sfcn():
 
     # sfcn = sfcn_loader(gpu=False, eval=False, weights='./brain_age/run_20190719_00_epoch_best_mae.p')
 
-    sfcn = sfcn_loader(gpu=gpu, eval=False, weights=None)
+    sfcn = sfcn_loader(gpu=gpu, eval=False, weights='./brain_age/run_20190719_00_epoch_best_mae.p')
     # load the dataset
     HOME = os.environ['HOME']
     root_dir = f'{HOME}/GenScotDepression/data/ukb/imaging/raw/t1_structural_nifti_20252'
@@ -56,16 +56,16 @@ def train_sfcn():
     batch_size = 8  # adjust as the paper
 
     # Instantiate the CustomDataset class
-    healthy_dataset = DataStoreDataset(root_dir, csv_file, )
+    healthy_dataset = DataStoreDataset(root_dir, csv_file, on_the_fly=False)
     healthy_dataset.load_data_info(root_dir, csv_file, filter_func=filter_healthy)
     # split to train and test
     train_size = int(0.8 * len(healthy_dataset))
     val_size = len(healthy_dataset) - train_size
     train_dataset, test_dataset = torch.utils.data.random_split(healthy_dataset, [train_size, val_size])
     dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, collate_fn=custom_collate_fn,
-                            num_workers=16)
+                            num_workers=8)
     dataloader_val = DataLoader(test_dataset, batch_size=batch_size, shuffle=False, collate_fn=custom_collate_fn,
-                                num_workers=16)
+                                num_workers=8)
 
     optimizer = optim.SGD(sfcn.parameters(), lr=init_learning_rate, weight_decay=weight_decay)
     scheduler = StepLR(optimizer, step_size=8, gamma=0.3)
@@ -102,13 +102,7 @@ def train_sfcn():
                 print('  batch {} loss: {}'.format(i + 1, last_loss))
                 tb_x = epoch_number * len(dataloader) + i + 1
                 writer.add_scalar('Loss/train', last_loss, tb_x)
-
-            tmp_dirs = batch['tmp_dir']
-            # remove the temporary files
-            for tmp_dir in tmp_dirs:
-                if tmp_dir is not None:
-                    shutil.rmtree(tmp_dir)
-                    # print(f'Temporary directory removed: {tmp_dir}')
+                running_loss = 0.
 
         # Print statistics
         print(f'Epoch: {epoch + 1}/{epochs}, Loss: {last_loss:.4f}')
@@ -147,19 +141,11 @@ def train_sfcn():
             best_loss = avg_val_loss
             best_epoch = epoch_number
             torch.save(sfcn.state_dict(), 'best_model.pth')
-        elif epoch_number - best_epoch >= 10:
-            print('Early stop for 10 epochs. Stopping training.')
+        elif epoch_number - best_epoch >= 7:
+            print('Early stop for 7 epochs. Stopping training.')
             torch.save(sfcn.state_dict(), f'early_stop_at_{epoch_number}.pth')
             break
 
-        # # Save a checkpoint every 5 epochs
-        # if epoch % 5 == 4:  # Check if epoch number is a multiple of 5
-        #     torch.save({
-        #         'epoch': epoch,
-        #         'model_state_dict': sfcn.state_dict(),
-        #         'optimizer_state_dict': optimizer.state_dict(),
-        #         'loss': loss
-        #     }, 'checkpoint.pth')
         sfcn.train()  # Set the model back to training mode for the next epoch
         print(f' best validation loss: {best_loss}')
         epoch_number += 1

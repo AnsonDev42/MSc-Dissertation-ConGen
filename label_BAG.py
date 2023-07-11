@@ -77,15 +77,16 @@ def sfcn_loader(gpu=True, eval=False, weights='./brain_age/run_20190719_00_epoch
     """
     model = SFCN()
     model = torch.nn.DataParallel(model)
+    if eval:
+        model.eval()
     if not gpu:
-        if eval:
-            model.eval()
+        if weights:
+            print(f'Loading weights from {weights}')
             model.load_state_dict(torch.load(weights, map_location='cpu'))
     else:
-        if eval:
-            model.eval()
-            fp_ = weights
-            model.load_state_dict(torch.load(fp_))
+        if weights:
+            print(f'Loading weights from {weights}')
+            model.load_state_dict(torch.load(weights))
         model.to(device)
     return model
 
