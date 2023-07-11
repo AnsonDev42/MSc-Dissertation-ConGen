@@ -158,8 +158,8 @@ class DataStoreDataset(CustomDataset):
         data = data.reshape([1, 160, 192, 160])
         label = np.array([age, ])
         bin_range, bin_step = get_bin_range_step(age=label)
-        labels, _ = dpu.num2vect(label, bin_range, bin_step, sigma=1.0)
-        return data, labels
+        labels, bc = dpu.num2vect(label, bin_range, bin_step, sigma=1.0)
+        return data, labels, bc
 
     def _cleanup_temp_dir(self, tmp_dir):
         try:
