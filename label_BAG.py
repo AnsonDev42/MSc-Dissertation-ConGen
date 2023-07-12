@@ -19,7 +19,7 @@ import torch
 import torch.nn.functional as F
 from sfcn_helper import get_bin_range_step
 
-device = torch.device('cuda:1' if torch.cuda.is_available() else 'cpu')
+device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
 
 def label_writer(filename='brain_age_info.csv', gpu=False):
@@ -235,7 +235,7 @@ def label_writer_batch(filename='brain_age_info.csv', gpu=True):
         #     print("brain age info file not overwritten")
         #     exit(0)
     # load the mdoel
-    model = sfcn_loader(gpu=gpu, eval=True, model_path='best_model.pth')
+    model = sfcn_loader(gpu=gpu, eval=True, model_path='best_model_1107_night33epochs.pth')
     # load the dataset
     HOME = os.environ['HOME']
     root_dir = f'{HOME}/GenScotDepression/data/ukb/imaging/raw/t1_structural_nifti_20252'
@@ -270,9 +270,9 @@ def label_writer_batch(filename='brain_age_info.csv', gpu=True):
 
 
 def label_data_batch_my_model():
-    gpu = 'cuda:1' if torch.cuda.is_available() else 'cpu'
+    gpu = 'cuda:0' if torch.cuda.is_available() else 'cpu'
     device = torch.device(gpu)
-    sfcn = sfcn_loader(gpu=gpu, eval=True, weights='best_model.pth')
+    sfcn = sfcn_loader(gpu=gpu, eval=True, weights='best_model_1107_2346.pth')
     # load the dataset
     HOME = os.environ['HOME']
     root_dir = f'{HOME}/GenScotDepression/data/ukb/imaging/raw/t1_structural_nifti_20252'
@@ -285,10 +285,10 @@ def label_data_batch_my_model():
     df = pd.DataFrame(columns=['study', 'filename', 'age', 'brain_age', 'MDD_status'])
     with torch.no_grad():
         for i, batch in enumerate(dataloader):
-            if batch is None:
+            if batch is None or 'image_data' not in batch.keys():
                 print('Batch is None')
                 continue
-            
+
             inputs = torch.Tensor(batch['image_data']).to(dtype=torch.float32, device=device)
             labels = torch.Tensor(batch['age_bin']).to(dtype=torch.float32, device=device)
             filename = batch['filename'][0]
@@ -306,7 +306,8 @@ def label_data_batch_my_model():
             # output_tensor = outputs[0].reshape([batch['age_bin'].shape[0], -1])
             # loss = dpl.my_KLDivLoss(output_tensor, labels)
             # Output, loss, visualisation
-            x = output[0].reshape([1, -1])
+            x = output[0].reshape([batch['age_bin'].shape[0], -1])
+
             if str(gpu) != 'cpu':
                 x = x.cpu()
                 bc = bc.cpu()
@@ -331,7 +332,7 @@ if __name__ == '__main__':
     # data = samples_arr
     import nibabel as nib
 
-    # model = sfcn_loader(gpu=True, weights='best_model.pth')  #
+    # model = sfcn_loader(gpu=True, weights='best_model_1107_night33epochs.pth')  #
     # data = np.random.rand(180, 200, 180)
     # print(infer_sample_ukb(data, 71, model, gpu=True))
     # label_writer()

@@ -109,34 +109,23 @@ def bias_correction(y: np.ndarray, y_pred: np.ndarray):
     return y_pred_unbiased, intercept, slope
 
 
-def bias_correction_writer():
-    """
-    given the ground truth and the predicted brain age, write the bias corrected brain age to a csv file,
-    with the aged percentage of the true age
-    :param y: true age
-    :param y_pred: predicted brain age without bias correction
-    :return: predicted brain age with bias correction and the aged percentage of the true age
+def bias_correction_writer(f='brain_age_info.csv', fw='brain_age_info_bc.csv'):
     """
 
-    df = pd.read_csv('brain_age_info_clean.csv')
-    y_pred = df['brain_age'].to_numpy()
-    y_actual = df['age'].to_numpy()
-    y_pred_unbiased, intercept, slope = bias_correction(y_actual, y_pred)
-    df['brain_age_unbiased'] = y_pred_unbiased
-    df['aged_percentage'] = y_pred_unbiased / y_actual
-    df.to_csv('brain_age_info.csv', index=False)
-
-
-if __name__ == '__main__':
+    :param f: read from csv that contains brain age and age
+    :param fw: write to csv that contains brain age and age after bias correction
+    :return:
+    """
     # load  brain_age_info_clean.csv in pandas , where age is y, brain_age is y hat.
-    df = pd.read_csv('brain_age_info.csv', index_col=0)
+    # f = 'brain_age_info_retrained_sfcn.csv'
+    df = pd.read_csv(f, index_col=0)
+    df = df[df['brain_age'].notna()]
     df_hc = df[df['MDD_status'] == 0.0]  # filter out MDD patients
     y_pred_hc = df_hc['brain_age'].to_numpy()
     y_actual_hc = df_hc['age'].to_numpy()
     print(f'y_pred{y_pred_hc}')
     print(f'y_actual{y_actual_hc}')
     y_pred_unbiased_hc, intercept, slope = bias_correction(y_actual_hc, y_pred_hc)
-    # calculate mae for the HC group
     mae = mean_absolute_error(y_actual_hc, y_pred_unbiased_hc)
     print(f'MAE for the HC group: {mae}')
 
@@ -149,13 +138,22 @@ if __name__ == '__main__':
     print(f'MAE for the MDD group: {mae}')
 
     # write this to the csv file
-    y_pred_unbiased_all = (df['age'] - intercept) / (slope + np.finfo(np.float32).eps)
+    y_pred_unbiased_all = (df['brain_age'] - intercept) / (slope + np.finfo(np.float32).eps)
 
     df['brain_age_unbiased'] = y_pred_unbiased_all
-    df.to_csv('brain_age_info_bc.csv', index=False)
-    #
+    yp = df[df['MDD_status'] == 1.0]['brain_age_unbiased']
+    mae = mean_absolute_error(df_mdd['age'], yp)
+    print(f'MAE for the MDD group checked : {mae}')
+
+    df.to_csv(fw, index=False)
     # # load csv to check mdd mae again:
-    # df = pd.read_csv('brain_age_info_clean.csv')
-    # df_mdd = df[df['MDD_status'] == 1.0]  # filter out MDD patients
-    # mae = mean_absolute_error(df_mdd['age'], df_mdd['brain_age_unbiased'])
-    # print(f'MAE for the MDD group checked : {mae}')
+    df = pd.read_csv(fw)
+    df = df[df['brain_age'].notna()]
+    df_mdd = df[df['MDD_status'] == 1.0]  # filter out MDD patients
+    mae = mean_absolute_error(df_mdd['age'], df_mdd['brain_age_unbiased'])
+    print(f'MAE for the MDD group checked : {mae}')
+
+
+if __name__ == '__main__':
+    # bias_correction_writer('brain_age_info.csv', 'brain_age_info_bc.csv')
+    ...

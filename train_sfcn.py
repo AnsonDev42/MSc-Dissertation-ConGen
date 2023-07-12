@@ -42,8 +42,8 @@ def train_sfcn():
     if str(device) == 'cpu':
         gpu = False
         print('Using CPU for training')
-    else:
-        print('Using GPU for training')
+
+    print(f'Using {str(device)} for training')
 
     sfcn = sfcn_loader(gpu=device, eval=False, weights='./brain_age/run_20190719_00_epoch_best_mae.p')
     # load the dataset
@@ -89,8 +89,10 @@ def train_sfcn():
 
             optimizer.zero_grad()
             outputs = sfcn.module(inputs)
-            output_tensor = outputs[0].reshape([batch['age_bin'].shape[0], -1])
+            output_tensor = outputs[0].reshape([labels.shape[0], -1])
+            labels = labels.reshape([labels.shape[0], -1])
             loss = dpl.my_KLDivLoss(output_tensor, labels)
+
             loss.backward()
             optimizer.step()
 
@@ -103,6 +105,8 @@ def train_sfcn():
                 writer.add_scalar('Loss/train', last_loss, tb_x)
                 writer.flush()
 
+        scheduler.step()
+
         # Print statistics
         avg_epoch_loss = running_loss / num_batches
         print(f'Epoch: {epoch + 1}/{epochs}, Loss: {avg_epoch_loss:.4f}')
@@ -114,6 +118,9 @@ def train_sfcn():
             for i, batch in enumerate(dataloader_val):
                 if batch is None:
                     continue
+                # handle if 'image_data' not in batch
+                if 'image_data' not in batch.keys():
+                    raise print('image_data not in batch.keys()')
 
                 inputs = torch.Tensor(batch['image_data']).to(dtype=torch.float32, device=device)
                 labels = torch.Tensor(batch['age_bin']).to(dtype=torch.float32, device=device)
@@ -121,6 +128,7 @@ def train_sfcn():
                 # Forward pass # output is a list
                 outputs = sfcn.module(inputs)
                 output_tensor = outputs[0].reshape([batch['age_bin'].shape[0], -1])
+                labels = labels.reshape([batch['age_bin'].shape[0], -1])
 
                 # Compute loss
                 loss = dpl.my_KLDivLoss(output_tensor, labels)
@@ -138,7 +146,7 @@ def train_sfcn():
         if avg_val_loss < best_loss:
             best_loss = avg_val_loss
             best_epoch = epoch_number
-            torch.save(sfcn.state_dict(), 'best_model.pth')
+            torch.save(sfcn.state_dict(), f'best_model_{time_str}.pth')
         elif epoch_number - best_epoch >= 7:
             print('Early stop for 7 epochs. Stopping training.')
             torch.save(sfcn.state_dict(), f'early_stop_at_{epoch_number}.pth')

@@ -129,7 +129,7 @@ class DataStoreDataset(CustomDataset):
                 return None
             age = row['f.21003.2.0']
             # Load the image data and pre-process
-            data, labels = self.preprocessing(extracted_path, age)
+            data, labels, bc = self.preprocessing(extracted_path, age)
 
         except Exception as e:
             print(f'get item exception in {extracted_path}:{e},try to remove and unzip again')
@@ -138,11 +138,11 @@ class DataStoreDataset(CustomDataset):
             if extracted_path is None:  # check for None values
                 return None
             age = row['f.21003.2.0']
-            data, labels = self.preprocessing(extracted_path, age)
+            data, labels, bc = self.preprocessing(extracted_path, age)
 
         sample = {'image_data': data, 'age': age, 'root_dir': self.root_dir, 'study': 'ukb',
                   'filename': row['filename'], 'mdd_status': row['depression'],
-                  'extracted_path': extracted_path, 'age_bin': labels}
+                  'extracted_path': extracted_path, 'age_bin': labels, 'bc': bc}
 
         # remove the temporary files
         if self.on_the_fly:
@@ -158,7 +158,7 @@ class DataStoreDataset(CustomDataset):
         data = data.reshape([1, 160, 192, 160])
         label = np.array([age, ])
         bin_range, bin_step = get_bin_range_step(age=label)
-        labels, bc = dpu.num2vect(label, bin_range, bin_step, sigma=1.0)
+        labels, bc = dpu.num2vect(label, bin_range, bin_step, sigma=1)
         return data, labels, bc
 
     def _cleanup_temp_dir(self, tmp_dir):
