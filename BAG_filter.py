@@ -50,6 +50,8 @@ def filter_BAG_data(f='brain_age_info_bc.csv', fw='brain_age_info_bc.csv'):
     # Save the new DataFrame to a CSV file
     df_combined = pd.concat([df_mdd_selected, df_hc_selected])
     df_combined = df_combined.drop(columns='age_bin')
+    df_combined['depression'] = df_combined['MDD_status']
+    df_combined['f.21003.2.0'] = df_combined['age']
 
     df_combined.to_csv(fw)
     return df_combined
