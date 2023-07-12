@@ -12,10 +12,12 @@ class Sampler(nn.Module):
 
     def forward(self, inputs):
         z_mean, z_log_var = inputs
-        print(f"shape of z_mean is {z_mean.size()}") # shape of z_mean is torch.Size([128, 2]
+        print(f"shape of z_mean is {z_mean.size()}")  # shape of z_mean is torch.Size([128, 2]
         batch = z_mean.size(0)
         dim = z_mean.size(1)
         epsilon = Variable(torch.randn(batch, dim))
+        if z_mean.is_cuda:
+            epsilon = epsilon.to(z_mean.device)
         return z_mean + torch.exp(z_log_var / 2) * epsilon
 
 
@@ -34,18 +36,19 @@ class DenseLayers(nn.Module):
 
 
 class Encoder(nn.Module):
-    def __init__(self, input_shape, intermediate_dim, latent_dim,filters, kernel_size, bias=True):
+    def __init__(self, input_shape, intermediate_dim, latent_dim, filters, kernel_size, bias=True):
         super(Encoder, self).__init__()
         self.input_shape = input_shape
         self.intermediate_dim = intermediate_dim
         self.latent_dim = latent_dim
-        # since the input shape would be 1*160*192*160, where 1 is the input channel number 
-        self.z_conv1 = nn.Conv3d(input_shape[0], filters * 2, kernel_size, stride=2, padding=(1,1,1), bias=bias)
-        self.z_conv2 = nn.Conv3d(filters * 2, filters * 4, kernel_size, stride=2, padding=(1,1,1), bias=bias)
+        print(f"input_shape is {input_shape}")
+        # since the input shape would be 1*160*192*160, where 1 is the input channel number
+        self.z_conv1 = nn.Conv3d(input_shape[0], filters * 2, kernel_size, stride=2, padding=(1, 1, 1), bias=bias)
+        self.z_conv2 = nn.Conv3d(filters * 2, filters * 4, kernel_size, stride=2, padding=(1, 1, 1), bias=bias)
 
         # hidden layers
         # self.z_h_layers = DenseLayers([input_shape, intermediate_dim])  # line143 in vae_utils.py
-        self.z_h_layers= nn.Linear(10543232, intermediate_dim) 
+        self.z_h_layers = nn.Linear(10543232, intermediate_dim)
         self.z_mean_layer = nn.Linear(intermediate_dim, latent_dim)
         self.z_log_var_layer = nn.Linear(intermediate_dim, latent_dim)
         self.sampler = Sampler()
@@ -53,16 +56,16 @@ class Encoder(nn.Module):
     def forward(self, x):
         x = F.relu(self.z_conv1(x))
         x = F.relu(self.z_conv2(x))
-        
+
         z_shape = list(x.size())
-        print(f"shape of x is {z_shape}") # shape of x is [ 128, 40, 48, 40]
+        print(f"shape of x is {z_shape}")  # shape of x is [ 128, 40, 48, 40]
         x = x.flatten(start_dim=1)
         z_h = self.z_h_layers(x)
         z_mean = self.z_mean_layer(z_h)
         z_log_var = self.z_log_var_layer(z_h)
         z = self.sampler((z_mean, z_log_var))
         assert z.shape[1:] == (self.latent_dim,)
-        return z_mean, z_log_var, z , z_shape
+        return z_mean, z_log_var, z, z_shape
 
 
 # tg_inputs = torch.randn(1,1, 160, 192, 160)
@@ -74,14 +77,17 @@ class Decoder(nn.Module):
     """
          input of decoders: torch.Size([1, 4])
     """
-    def __init__(self, latent_dim, intermediate_dim,z_shape, output_dim,filters,kernel_size,nlayers, bias=True):
+
+    def __init__(self, latent_dim, intermediate_dim, z_shape, output_dim, filters, kernel_size, nlayers, bias=True):
         super(Decoder, self).__init__()
-        self.z_shape =  [1, 128, 40, 48, 40]
+        self.z_shape = [1, 128, 40, 48, 40]
         self.filters = filters
         self.kernel_size = kernel_size
         self.linear1 = nn.Linear(latent_dim * 2, intermediate_dim, bias=bias)
-        self.linear2 = nn.Linear(intermediate_dim,self.z_shape[1]*self.z_shape[2]* self.z_shape[3]*self.z_shape[4], bias=bias) # based on z_shape
-        
+        self.linear2 = nn.Linear(intermediate_dim,
+                                 self.z_shape[1] * self.z_shape[2] * self.z_shape[3] * self.z_shape[4],
+                                 bias=bias)  # based on z_shape
+
         layers = []
         layers.append(nn.ConvTranspose3d(in_channels=self.z_shape[1],
                                          out_channels=self.filters,
@@ -92,7 +98,7 @@ class Decoder(nn.Module):
                                          bias=bias))
         for i in range(1, nlayers):
             layers.append(nn.ConvTranspose3d(in_channels=self.filters,
-                                             out_channels=self.filters//4,
+                                             out_channels=self.filters // 4,
                                              kernel_size=self.kernel_size,
                                              stride=2,
                                              padding=0,
@@ -102,17 +108,16 @@ class Decoder(nn.Module):
             self.filters //= 4
         self.convlayers = nn.Sequential(*layers)
         self.output_3dT = nn.ConvTranspose3d(in_channels=self.filters,
-                                         out_channels=1,
-                                         kernel_size=self.kernel_size,
-                                         stride=1,
-                                         padding=2,
-                                         bias=bias
-                                         )
-        self.sigmoid = nn.Sigmoid() 
-        
-  
+                                             out_channels=1,
+                                             kernel_size=self.kernel_size,
+                                             stride=1,
+                                             padding=2,
+                                             bias=bias
+                                             )
+        self.sigmoid = nn.Sigmoid()
+
     def forward(self, x):
-        x = x.flatten(start_dim=0)
+        x = x.view(x.size(0), -1)  # x = x.flatten(start_dim=0)
         x = F.relu(self.linear1(x))
         x = F.relu(self.linear2(x))
         x = x.view(-1, *self.z_shape[1:])
@@ -121,29 +126,32 @@ class Decoder(nn.Module):
         x = torch.sigmoid(self.output_3dT(x))
         return x
 
+
 # tg_inputs = torch.randn(4,1)
 # decoder= Decoder(latent_dim=2, intermediate_dim=128,z_shape=[1, 128, 40, 48, 40], output_dim=9830400,filters=32,kernel_size=2,nlayers=2, bias=True)
 # res = decoder(tg_inputs)
 # print(f"decoder result: shape of x is {res.shape}") # decoder: shape of x is torch.Size([4, 1, 160, 192, 160])
 
 class ContrastiveVAE(nn.Module):
-    def __init__(self, input_shape=(1,160,192,160), intermediate_dim=128, latent_dim=2, beta=1, disentangle=False, gamma=1, bias=True, batch_size=64):
+    def __init__(self, input_shape=(1, 160, 192, 160), intermediate_dim=128, latent_dim=2, beta=1, disentangle=False,
+                 gamma=1, bias=True, batch_size=64, device=None):
         super(ContrastiveVAE, self).__init__()
         # image_size, _, _, channels = input_shape
-        kernel_size = 2 # 3 to 2
+        kernel_size = 2  # 3 to 2
         filters = 32
         nlayers = 2
-        self.z_encoder = Encoder(input_shape, intermediate_dim, latent_dim,filters, kernel_size, bias=bias)
-        self.s_encoder = Encoder(input_shape, intermediate_dim, latent_dim,filters, kernel_size, bias=bias)
-        
-        if input_shape == (1,160,192,160):
-            self.z_shape =  [128, 40, 48, 40]
+        self.z_encoder = Encoder(input_shape, intermediate_dim, latent_dim, filters, kernel_size, bias=bias)
+        self.s_encoder = Encoder(input_shape, intermediate_dim, latent_dim, filters, kernel_size, bias=bias)
+
+        if input_shape == (1, 160, 192, 160):
+            self.z_shape = [128, 40, 48, 40]
         else:
-            raise NotImplementedError( "for now encoder is using hardcoded product of z_shape")
+            raise NotImplementedError("for now encoder is using hardcoded product of z_shape")
             # res = self.z_encoder(torch.randn(*input_shape))
             # self.z_shape = res[3]
             # print(f"z_shape set to unverified {self.z_shape}")
-        self.decoder = Decoder(latent_dim, intermediate_dim,self.z_shape,output_dim=input_shape,filters=filters,kernel_size= kernel_size, nlayers = nlayers, bias=bias)
+        self.decoder = Decoder(latent_dim, intermediate_dim, self.z_shape, output_dim=input_shape, filters=filters,
+                               kernel_size=kernel_size, nlayers=nlayers, bias=bias)
         self.disentangle = disentangle
         self.beta = beta
         self.gamma = gamma
@@ -154,11 +162,12 @@ class ContrastiveVAE(nn.Module):
 
     def forward(self, tg_inputs, bg_inputs):
         tg_z_mean, tg_z_log_var, tg_z, shape_z = self.z_encoder(tg_inputs)
-        print("tg_z shape",tg_z.shape)
+        print("tg_z shape", tg_z.shape)
         tg_s_mean, tg_s_log_var, tg_s, shape_s = self.s_encoder(tg_inputs)
         bg_z_mean, bg_z_log_var, bg_z, _ = self.z_encoder(
             bg_inputs)  # s->z:conflict with example code but match with paper
         print(f"input of decoders: {torch.cat((tg_z, tg_s), dim=-1).shape}")
+        print
         tg_outputs = self.decoder(torch.cat((tg_z, tg_s), dim=-1))  # line 196 in vae_utils.py
         bg_outputs = self.decoder(torch.cat((torch.zeros_like(tg_z), bg_z), dim=-1))
         fg_outputs = self.decoder(torch.cat((tg_z, torch.zeros_like(tg_z)), dim=-1))
@@ -192,21 +201,23 @@ class ContrastiveVAE(nn.Module):
                 tc_loss, discriminator_loss)
         else:
             return tg_outputs, bg_outputs, tg_z_mean, tg_z_log_var, tg_s_mean, tg_s_log_var, bg_z_mean, bg_z_log_var
+
     def get_z_shape(self):
-        tg_inputs = torch.randn(1,1, 160, 192, 160)
-        encoder= Encoder(input_shape=(1,160,192,160), intermediate_dim=128, latent_dim=2,filters=32, kernel_size=3, bias=True)
+        tg_inputs = torch.randn(1, 1, 160, 192, 160)
+        encoder = Encoder(input_shape=(1, 160, 192, 160), intermediate_dim=128, latent_dim=2, filters=32, kernel_size=3,
+                          bias=True)
         res = encoder(tg_inputs)
-        print(f"z_shape {res[3]}") # z_shape [1, 128, 40, 48, 40]
+        print(f"z_shape {res[3]}")  # z_shape [1, 128, 40, 48, 40]
         self.z_shape = res[3]
         return self.z_shape
 
-def cvae_loss(original_dim,
-              tg_inputs, bg_inputs, tg_outputs, bg_outputs, 
-             tg_z_mean, tg_z_log_var, 
-             tg_s_mean, tg_s_log_var, 
-             bg_z_mean, bg_z_log_var, 
-            beta=1.0, disentangle=False, gamma=0.0,tc_loss=None, discriminator_loss=None):
 
+def cvae_loss(original_dim,
+              tg_inputs, bg_inputs, tg_outputs, bg_outputs,
+              tg_z_mean, tg_z_log_var,
+              tg_s_mean, tg_s_log_var,
+              bg_z_mean, bg_z_log_var,
+              beta=1.0, disentangle=False, gamma=0.0, tc_loss=None, discriminator_loss=None):
     # Reconstruction Loss
     reconstruction_loss = nn.MSELoss(reduction="none")
     tg_reconstruction_loss = reconstruction_loss(tg_inputs, tg_outputs).view(tg_inputs.size(0), -1).sum(dim=1)
@@ -220,16 +231,50 @@ def cvae_loss(original_dim,
     kl_loss = kl_loss.sum(dim=-1) * -0.5
     if disentangle:
         cvae_loss = reconstruction_loss.mean() + beta * kl_loss.mean() + gamma * tc_loss + discriminator_loss
+        # print each loss
+        print(f"reconstruction_loss {reconstruction_loss.mean()}")
+        print(f"beta* kl_loss {beta * kl_loss.mean()}")
+        print(f"gamma * tc_loss {gamma * tc_loss}")
+        print(f"discriminator_loss {discriminator_loss}")
+
     else:
         cvae_loss = reconstruction_loss.mean() + beta * kl_loss.mean()
+        # print each loss
+        print(f"reconstruction_loss {reconstruction_loss.mean()}")
+        print(f"beta* kl_loss {beta * kl_loss.mean()}")
 
     return cvae_loss
 
+
 if __name__ == '__main__':
-    tg_inputs = torch.randn(1,1, 160, 192, 160)
-    bg_inputs = torch.randn(1,1, 160, 192, 160)
-    cvae = ContrastiveVAE()
-    tg_outputs, bg_outputs, tg_z_mean, tg_z_log_var, tg_s_mean, tg_s_log_var, bg_z_mean, bg_z_log_var = cvae(tg_inputs, bg_inputs)
+    # device = torch.device("cuda:4" if torch.cuda.is_available() else "cpu")
+    # tg_inputs = torch.randn(8, 1, 160, 192, 160).to(device)
+    # bg_inputs = torch.randn(8, 1, 160, 192, 160).to(device)
+    # cvae = ContrastiveVAE()
+    # cvae.to(device)
+
+    device = torch.device("cuda")
+    device_ids = [4, 1]
+    print(f'Using device: {device}')
+    # Define hyperparameters
+    learning_rate = 0.001
+    num_epochs = 10
+    batch_size = 8  # from 32
+    # Instantiate the model
+    input_dim = (1, 160, 192, 160)  # 784
+    intermediate_dim = 256
+    latent_dim = 2
+    beta = 1
+    disentangle = True
+    gamma = 0
+    model = ContrastiveVAE(input_dim, intermediate_dim, latent_dim, beta, disentangle, gamma)
+    model = nn.DataParallel(model, ).cuda()  # Wrap the model with DataParallel
+    # model.to(device)
+    model = torch.compile(model)
+    tg_inputs = torch.randn(8, 1, 160, 192, 160).to(device)
+    bg_inputs = torch.randn(8, 1, 160, 192, 160).to(device)
+    tg_outputs, bg_outputs, tg_z_mean, tg_z_log_var, tg_s_mean, tg_s_log_var, bg_z_mean, bg_z_log_var = model(tg_inputs,
+                                                                                                              bg_inputs)
     print(f"tg_outputs shape {tg_outputs.shape}")
     print(f"bg_outputs shape {bg_outputs.shape}")
     print(f"tg_z_mean shape {tg_z_mean.shape}")
