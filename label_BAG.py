@@ -319,7 +319,8 @@ def label_data_batch_my_model():
             print(f"study: {study}, filename: {filename}, age: {age}, brain age: {pred}, MDD_status: {mdd_status}")
             new_row = {'study': study, 'filename': filename, 'age': age, 'brain_age': pred, 'MDD_status': mdd_status}
             df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
-
+    # add 'depression' column as the same as 'MDD_status'
+    df['depression'] = df['MDD_status']
     df.to_csv('brain_age_info_retrained_sfcn_ttt.csv')
 
 
