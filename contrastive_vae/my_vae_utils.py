@@ -59,8 +59,9 @@ class Encoder(nn.Module):
         x = F.relu(self.z_conv2(x))
 
         z_shape = list(x.size())
-        # print(f"shape of x is {z_shape}")  # shape of x is [ 128, 40, 48, 40]
+        print(f"shape of x is {z_shape}")  # shape of x is [ 128, 40, 48, 40]
         x = x.flatten(start_dim=1)
+        print(f"shape of x is {x.size()}")  # shape of x is 314,572,800
         z_h = self.z_h_layers(x)
         z_mean = self.z_mean_layer(z_h)
         z_log_var = self.z_log_var_layer(z_h)
@@ -202,14 +203,14 @@ class ContrastiveVAE(nn.Module):
         else:
             return tg_outputs, bg_outputs, tg_z_mean, tg_z_log_var, tg_s_mean, tg_s_log_var, bg_z_mean, bg_z_log_var
 
-    def get_z_shape(self):
-        tg_inputs = torch.randn(1, 1, 160, 192, 160)
-        encoder = Encoder(input_shape=(1, 160, 192, 160), intermediate_dim=128, latent_dim=2, filters=32, kernel_size=3,
-                          bias=True)
-        res = encoder(tg_inputs)
-        # print(f"z_shape {res[3]}")  # z_shape [1, 128, 40, 48, 40]
-        self.z_shape = res[3]
-        return self.z_shape
+    # def get_z_shape(self):
+    #     tg_inputs = torch.randn(1, 1, 160, 192, 160)
+    #     encoder = Encoder(input_shape=(1, 160, 192, 160), intermediate_dim=128, latent_dim=2, filters=32, kernel_size=3,
+    #                       bias=True)
+    #     res = encoder(tg_inputs)
+    #     print(f"z_shape {res[3]}")  # z_shape [1, 128, 40, 48, 40]
+    #     self.z_shape = res[3]
+    #     return self.z_shape
 
 
 def cvae_loss(original_dim,
@@ -226,14 +227,16 @@ def cvae_loss(original_dim,
         bg_inputs = bg_inputs.to(bg_outputs.device)
     tg_reconstruction_loss = reconstruction_loss(tg_inputs, tg_outputs).view(tg_inputs.size(0), -1).sum(dim=1)
     bg_reconstruction_loss = reconstruction_loss(bg_inputs, bg_outputs).view(bg_inputs.size(0), -1).sum(dim=1)
-    reconstruction_loss = (tg_reconstruction_loss + bg_reconstruction_loss).mean() * (
-            original_dim[1] * original_dim[2] * original_dim[3])
+    reconstruction_loss = 0.5 * (tg_reconstruction_loss + bg_reconstruction_loss) \
+                          / (original_dim[1] * original_dim[2] * original_dim[3])
 
     # KL Loss
-    kl_loss = 1 + tg_z_log_var - tg_z_mean.pow(2) - tg_z_log_var.exp()
-    kl_loss += 1 + tg_s_log_var - tg_s_mean.pow(2) - tg_s_log_var.exp()
-    kl_loss += 1 + bg_z_log_var - bg_z_mean.pow(2) - bg_z_log_var.exp()
-    kl_loss = kl_loss.sum(dim=-1) * -0.5
+    kl_loss = (
+                      1 + tg_z_log_var - tg_z_mean.pow(2) - tg_z_log_var.exp() \
+                      + 1 + tg_s_log_var - tg_s_mean.pow(2) - tg_s_log_var.exp() \
+                      + 1 + bg_z_log_var - bg_z_mean.pow(2) - bg_z_log_var.exp()
+              ).sum(dim=-1) * -0.5
+    # kl_loss = kl_loss.sum(dim=-1) * -0.5
     if disentangle:
         cvae_loss = reconstruction_loss.mean() + beta * kl_loss.mean() + gamma * tc_loss.mean() + discriminator_loss.mean()
         # print each loss
@@ -287,7 +290,7 @@ if __name__ == '__main__':
     batch_size = 8  # from 32
     # Instantiate the model
     input_dim = (1, 160, 192, 160)  # 784
-    intermediate_dim = 256
+    intermediate_dim = 32  # 256
     latent_dim = 2
     beta = 1
     disentangle = False
@@ -295,6 +298,10 @@ if __name__ == '__main__':
     model = ContrastiveVAE(input_dim, intermediate_dim, latent_dim, beta, disentangle, gamma)
     model = nn.DataParallel(model, device_ids=[4, 1])  # Wrap the model with DataParallel
     model.to(device)
+    pytorch_total_params = sum(p.numel() for p in model.parameters())
+    print(f"Number of parameters: {pytorch_total_params}")
+    pytorch_total_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    print(f"Number of trainable parameters: {pytorch_total_params}")
     model = torch.compile(model)
     tg_inputs = torch.randn(8, 1, 160, 192, 160)
     bg_inputs = torch.randn(8, 1, 160, 192, 160)

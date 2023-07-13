@@ -16,26 +16,22 @@ now = datetime.datetime.now()
 time_str = now.strftime("%d%m_%H%M")
 writer = SummaryWriter(f'runs/sfcn_train_{time_str}')
 torch.cuda.empty_cache()
-# device = torch.device("cuda:3")
-device_ids = [0, 1, 3]
+device = torch.device("cuda:0")
+device_ids = [0, 3, 4]
 # print(f'Using device: {device} and potential device_ids: {device_ids}')
-#
 # from accelerate import Accelerator
 # from accelerate import infer_auto_device_map
-#
 # accelerator = Accelerator(device_ids=device_ids)
-# accelerator.device_ids = device_ids
 # device = accelerator
 
 # Define hyperparameters
 learning_rate = 0.001
-epochs = 10
-batch_size = 4  # from 32
+epochs = 100
+batch_size = 32  # from 32
 
 # Instantiate the model
 input_dim = (1, 160, 192, 160)  # 784
-intermediate_dim = 256
-
+intermediate_dim = 32  # 256
 latent_dim = 2
 beta = 1
 disentangle = True
@@ -43,7 +39,7 @@ gamma = 0
 model = ContrastiveVAE(input_dim, intermediate_dim, latent_dim, beta, disentangle, gamma)
 
 model = nn.DataParallel(model, device_ids=device_ids)
-model.to(device_ids[0])
+model.to(device)
 for name, param in model.named_parameters():
     if not param.device == device_ids[0]:
         print(f"Parameter '{name}' is on device '{param.device}', moving to device '{device_ids[0]}'")
@@ -68,11 +64,11 @@ healthy_dataset.load_data_info(root_dir, csv_file, filter_func=filter_healthy)
 mdd_dataset = DataStoreDataset(root_dir, csv_file, on_the_fly=False)
 mdd_dataset.load_data_info(root_dir, csv_file, filter_func=filter_depressed)
 
-hc_train_size = int(0.1 * len(healthy_dataset))
+hc_train_size = int(0.8 * len(healthy_dataset))
 hc_val_size = len(healthy_dataset) - hc_train_size
 hc_train_dataset, hc_test_dataset = torch.utils.data.random_split(healthy_dataset, [hc_train_size, hc_val_size])
 
-mdd_train_size = int(0.1 * len(mdd_dataset))
+mdd_train_size = int(0.8 * len(mdd_dataset))
 mdd_val_size = len(mdd_dataset) - mdd_train_size
 mdd_train_dataset, mdd_test_dataset = torch.utils.data.random_split(mdd_dataset, [mdd_train_size, mdd_val_size])
 
@@ -89,6 +85,13 @@ tg_train_loader = torch.utils.data.DataLoader(tg_train_data, batch_size=batch_si
 bg_train_loader = torch.utils.data.DataLoader(bg_train_data, batch_size=batch_size, shuffle=True,
                                               collate_fn=custom_collate_fn,
                                               num_workers=8)
+
+tg_test_loader = torch.utils.data.DataLoader(tg_test_data, batch_size=batch_size, shuffle=False,
+                                             collate_fn=custom_collate_fn,
+                                             num_workers=8)
+bg_test_loader = torch.utils.data.DataLoader(bg_test_data, batch_size=batch_size, shuffle=False,
+                                             collate_fn=custom_collate_fn,
+                                             num_workers=8)
 # Loop over the data for the desired number of epochs
 # model, optimizer, tg_train_loader, bg_train_loader = accelerator.prepare(model, optimizer, tg_train_loader,
 #                                                                          bg_train_loader)
@@ -108,22 +111,26 @@ for epoch in range(epochs):
         optimizer.zero_grad()
         if batch is None:
             continue
-        tg_inputs, bg_inputs = batch[0]['image_data'], batch[1]['image_data']
+        tg_inputs, bg_inputs = batch[0]['image_data'].to(dtype=torch.float32), batch[1]['image_data'].to(
+            dtype=torch.float32)
         # tg_inputs, bg_inputs = batch[0].to('cuda:2'), batch[1].to('cuda:2')
         # if 'image_data' not in tg_inputs.keys() or 'image_data' not in bg_inputs.keys():
         #     raise print('image_data not in batch.keys()')  # never should happen in this stage
 
         # tg_inputs = torch.Tensor(tg_inputs['image_data']).to(dtype=torch.float32)
         # bg_inputs = torch.Tensor(bg_inputs['image_data']).to(dtype=torch.float32)
+        # with torch.autocast(device_type='cuda'):
         output = model(tg_inputs, bg_inputs)
         tg_outputs, bg_outputs, tg_z_mean, tg_z_log_var, tg_s_mean, tg_s_log_var, bg_z_mean, bg_z_log_var, \
             tc_loss, discriminator_loss = output
 
         loss = cvae_loss(input_dim, tg_inputs, bg_inputs, tg_outputs, bg_outputs, tg_z_mean, tg_z_log_var, tg_s_mean,
                          tg_s_log_var, bg_z_mean, bg_z_log_var, beta, disentangle, gamma, tc_loss, discriminator_loss)
-        del tg_inputs, bg_inputs, tg_outputs, bg_outputs, tg_z_mean, tg_z_log_var, tg_s_mean, tg_s_log_var, bg_z_mean, bg_z_log_var,
+        del batch, tg_inputs, bg_inputs, tg_outputs, bg_outputs, tg_z_mean, tg_z_log_var, tg_s_mean, tg_s_log_var, bg_z_mean, bg_z_log_var,
         torch.cuda.empty_cache()
+
         loss.backward()
+
         # accelerator.backward(loss)
         # Update the optimizer parameters using the gradients
         optimizer.step()
@@ -145,17 +152,11 @@ for epoch in range(epochs):
         with torch.no_grad():
             model.eval()
             model.disentangle = False
-            if batch is None:
-                continue
-            tg_inputs, bg_inputs = batch
-            if 'image_data' not in tg_inputs.keys() or 'image_data' not in bg_inputs.keys():
-                raise print('image_data not in batch.keys()')
-            for i, batch in enumerate(zip(tg_test_data, bg_test_data)):
-                tg_inputs, bg_inputs = batch
-                if 'image_data' not in tg_inputs.keys() or 'image_data' not in bg_inputs.keys():
-                    raise print('image_data not in batch.keys()')
-                tg_inputs = torch.Tensor(tg_inputs['image_data']).to(dtype=torch.float32)
-                bg_inputs = torch.Tensor(bg_inputs['image_data']).to(dtype=torch.float32)
+            for i, batch in enumerate(zip(tg_test_loader, bg_test_loader)):
+                if batch is None:
+                    continue
+                tg_inputs, bg_inputs = batch[0]['image_data'].to(dtype=torch.float32), batch[1]['image_data'].to(
+                    dtype=torch.float32)
                 tg_outputs, bg_outputs, tg_z_mean, tg_z_log_var, tg_s_mean, tg_s_log_var, bg_z_mean, bg_z_log_var = model(
                     tg_inputs, bg_inputs)
                 plot_latent_space(tg_z_mean, bg_z_mean, f'epoch {epoch}')
