@@ -14,10 +14,11 @@ from torch.nn.parallel import DataParallel
 # current time in ddmm_hhmm format
 now = datetime.datetime.now()
 time_str = now.strftime("%d%m_%H%M")
-writer = SummaryWriter(f'runs/sfcn_train_{time_str}')
+writer = SummaryWriter(f'runs/cvae_{time_str}')
 torch.cuda.empty_cache()
 device = torch.device("cuda:0")
-device_ids = [0, 3, 4]
+device_ids = [0, 3]
+
 # print(f'Using device: {device} and potential device_ids: {device_ids}')
 # from accelerate import Accelerator
 # from accelerate import infer_auto_device_map
@@ -40,15 +41,16 @@ model = ContrastiveVAE(input_dim, intermediate_dim, latent_dim, beta, disentangl
 
 model = nn.DataParallel(model, device_ids=device_ids)
 model.to(device)
+
 for name, param in model.named_parameters():
-    if not param.device == device_ids[0]:
-        print(f"Parameter '{name}' is on device '{param.device}', moving to device '{device_ids[0]}'")
-        param.data = param.data.to(device_ids[0])
+    if not param.device == device:
+        print(f"Parameter '{name}' is on device '{param.device}', moving to device '{device}'")
+        param.data = param.data.to(device)
 
 for name, buf in model.named_buffers():
-    if not buf.device == device_ids[0]:
-        print(f"Buffer '{name}' is on device '{buf.device}', moving to device '{device_ids[0]}'")
-        buf.data = buf.data.to(device_ids[0])
+    if not buf.device == device:
+        print(f"Buffer '{name}' is on device '{buf.device}', moving to device '{device}'")
+        buf.data = buf.data.to(device)
 
 # model = torch.compile(model)
 
@@ -119,7 +121,6 @@ for epoch in range(epochs):
 
         # tg_inputs = torch.Tensor(tg_inputs['image_data']).to(dtype=torch.float32)
         # bg_inputs = torch.Tensor(bg_inputs['image_data']).to(dtype=torch.float32)
-        # with torch.autocast(device_type='cuda'):
         output = model(tg_inputs, bg_inputs)
         tg_outputs, bg_outputs, tg_z_mean, tg_z_log_var, tg_s_mean, tg_s_log_var, bg_z_mean, bg_z_log_var, \
             tc_loss, discriminator_loss = output
@@ -142,36 +143,36 @@ for epoch in range(epochs):
             tb_x = epoch_number * len(tg_train_loader) + i + 1
             writer.add_scalar('Loss/train', last_loss, tb_x)
             writer.flush()
-        # Print statistics
-        avg_epoch_loss = running_loss / num_batches
-        print(f'Epoch: {epoch + 1}/{epochs}, Loss: {avg_epoch_loss:.4f}')
-        writer.add_scalar('training loss', avg_epoch_loss, epoch)
-        writer.flush()
-        running_vloss = 0.0
-        num_val_batches = 0
-        with torch.no_grad():
-            model.eval()
-            model.disentangle = False
-            for i, batch in enumerate(zip(tg_test_loader, bg_test_loader)):
-                if batch is None:
-                    continue
-                tg_inputs, bg_inputs = batch[0]['image_data'].to(dtype=torch.float32), batch[1]['image_data'].to(
-                    dtype=torch.float32)
-                tg_outputs, bg_outputs, tg_z_mean, tg_z_log_var, tg_s_mean, tg_s_log_var, bg_z_mean, bg_z_log_var = model(
-                    tg_inputs, bg_inputs)
-                plot_latent_space(tg_z_mean, bg_z_mean, f'epoch {epoch}')
-                loss = cvae_loss(input_dim, tg_inputs, bg_inputs, tg_outputs, bg_outputs, tg_z_mean, tg_z_log_var,
-                                 tg_s_mean, tg_s_log_var, bg_z_mean, bg_z_log_var, beta, disentangle, gamma)
-                running_vloss += loss.item()
-                num_val_batches += 1
-            print('Test Loss: {:.4f}'.format(loss.item()))
-        avg_val_loss = running_vloss / num_val_batches  # average validation loss
-        writer.add_scalar('validation loss', avg_val_loss, epoch)
-        writer.add_scalars('Training vs. Validation Loss',
-                           {'Training': avg_epoch_loss, 'Validation': avg_val_loss},
-                           epoch_number + 1)
-        writer.flush()
-        # Check if this is the best model
+    # Print statistics
+    avg_epoch_loss = running_loss / num_batches
+    print(f'Epoch: {epoch + 1}/{epochs}, Loss: {avg_epoch_loss:.4f}')
+    writer.add_scalar('training loss', avg_epoch_loss, epoch)
+    writer.flush()
+    running_vloss = 0.0
+    num_val_batches = 0
+    with torch.no_grad():
+        model.eval()
+        model.disentangle = False
+        for i, batch in enumerate(zip(tg_test_loader, bg_test_loader)):
+            if batch is None:
+                continue
+            tg_inputs, bg_inputs = batch[0]['image_data'].to(dtype=torch.float32), batch[1]['image_data'].to(
+                dtype=torch.float32)
+            tg_outputs, bg_outputs, tg_z_mean, tg_z_log_var, tg_s_mean, tg_s_log_var, bg_z_mean, bg_z_log_var = model(
+                tg_inputs, bg_inputs)
+            plot_latent_space(tg_z_mean, bg_z_mean, f'epoch {epoch}')
+            loss = cvae_loss(input_dim, tg_inputs, bg_inputs, tg_outputs, bg_outputs, tg_z_mean, tg_z_log_var,
+                             tg_s_mean, tg_s_log_var, bg_z_mean, bg_z_log_var, beta, disentangle, gamma)
+            running_vloss += loss.item()
+            num_val_batches += 1
+    avg_val_loss = running_vloss / num_val_batches  # average validation loss
+    print(f'Epoch: {epoch + 1}/{epochs}, Validation Loss: {avg_val_loss:.4f}')
+    writer.add_scalar('validation loss', avg_val_loss, epoch)
+    writer.add_scalars('Training vs. Validation Loss',
+                       {'Training': avg_epoch_loss, 'Validation': avg_val_loss},
+                       epoch_number + 1)
+    writer.flush()
+    # Check if this is the best model
     if avg_val_loss < best_loss:
         best_loss = avg_val_loss
         best_epoch = epoch_number
@@ -180,8 +181,8 @@ for epoch in range(epochs):
         print('Early stop for 7 epochs. Stopping training.')
         torch.save(model.state_dict(), f'cvae_model_early_stop_at_{epoch_number}_{time_str}.pth')
         break
-    model.train()
-    epoch_number += 1
+        model.train()
+        epoch_number += 1
 print('Finished Training CVAE')
 writer.close()
 
