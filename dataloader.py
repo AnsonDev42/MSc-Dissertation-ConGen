@@ -16,12 +16,18 @@ from sfcn_helper import get_bin_range_step
 
 
 class CustomDataset(Dataset):
-    def __init__(self, root_dir, csv_file, on_the_fly=True):
+    def __init__(self, root_dir, csv_file, on_the_fly=True, max_min=False):
         self.root_dir = root_dir
         self.data_info = self.load_data_info(root_dir, csv_file)
         self.missing_file_log = 'missing_files.csv'
         self.extract_dir = "/disk/scratch/s2341683/extracted_files"
         self.on_the_fly = on_the_fly
+        self.max_min = max_min
+        if max_min:
+            self.min = torch.load('./../min_values.pt').unsqueeze(0)
+            self.max = torch.load('./../max_values.pt').unsqueeze(0)
+            self.diff = torch.load('./../diff.pt').unsqueeze(0)
+
         if not os.path.exists(self.extract_dir):
             os.makedirs(self.extract_dir)
 
@@ -153,12 +159,22 @@ class DataStoreDataset(CustomDataset):
     def preprocessing(self, extracted_path, age):
         data = nib.load(extracted_path).get_fdata()
         data = data.astype(np.float32)
-        data = data / data.mean()
+        # data = data / data.mean()
         data = dpu.crop_center(data, (160, 192, 160))
+        # data = (data - min) / diff
+        # normalise data by min max in all dimensions
         data = data.reshape([1, 160, 192, 160])
+        min = data.min()
+        max = data.max()
+        diff = max - min
+        data = (data - min) / diff
+        if self.max_min:
+            data = torch.tensor(data)
+            data = (data - self.min) / self.diff
         label = np.array([age, ])
-        bin_range, bin_step = get_bin_range_step(age=label)
-        labels, bc = dpu.num2vect(label, bin_range, bin_step, sigma=1)
+        # bin_range, bin_step = get_bin_range_step(age=label)
+        # labels, bc = dpu.num2vect(label, bin_range, bin_step, sigma=1)
+        labels, bc = -1, -1
         return data, labels, bc
 
     def _cleanup_temp_dir(self, tmp_dir):
@@ -199,6 +215,7 @@ class DataStoreDataset(CustomDataset):
             # Extract the required file into the temporary directory
             target_file_path = os.path.join(tmp_dir, 'T1/T1_brain_to_MNI.nii.gz')
             zip_ref.extract('T1/T1_brain_to_MNI.nii.gz', tmp_dir)
+            print(f'Extracted {zip_filename} to {target_file_path}')
 
         return target_file_path, tmp_dir
 
@@ -210,16 +227,80 @@ def custom_collate_fn(batch):
     return torch.utils.data.dataloader.default_collate(batch)  # use default collate on the filtered batch
 
 
-if __name__ == '__main__':
+def get_min_max():
     HOME = os.environ['HOME']
     root_dir = f'{HOME}/GenScotDepression/data/ukb/imaging/raw/t1_structural_nifti_20252'
-    csv_file = 'data/filtered_mdd_db_age.csv'
-    depressed_dataset = DataStoreDataset(root_dir, csv_file)
-    depressed_dataset.load_data_info(root_dir, csv_file, filter_func=filter_depressed)
-
-    healthy_dataset = DataStoreDataset(root_dir, csv_file)
+    # csv_file = 'data/filtered_mdd_db_age.csv'
+    # depressed_dataset = DataStoreDataset(root_dir, csv_file)
+    # depressed_dataset.load_data_info(root_dir, csv_file, filter_func=filter_depressed)
+    # healthy_dataset = DataStoreDataset(root_dir, csv_file)
+    # healthy_dataset.load_data_info(root_dir, csv_file, filter_func=filter_healthy)
+    # depressed_loader = DataLoader(depressed_dataset, batch_size=32, shuffle=False, collate_fn=custom_collate_fn)
+    # healthy_loader = DataLoader(healthy_dataset, batch_size=32, shuffle=False, collate_fn=custom_collate_fn)
+    csv_file = 'brain_age_info_retrained_sfcn_bc_filtered.csv'
+    healthy_dataset = DataStoreDataset(root_dir, csv_file, on_the_fly=False, max_min=False)
     healthy_dataset.load_data_info(root_dir, csv_file, filter_func=filter_healthy)
+    mdd_dataset = DataStoreDataset(root_dir, csv_file, on_the_fly=False, max_min=False)
+    mdd_dataset.load_data_info(root_dir, csv_file, filter_func=filter_depressed)
 
-    # Create DataLoader objects
-    depressed_loader = DataLoader(depressed_dataset, batch_size=32, shuffle=False, collate_fn=custom_collate_fn)
-    healthy_loader = DataLoader(healthy_dataset, batch_size=32, shuffle=False, collate_fn=custom_collate_fn)
+    hc_train_size = int(0.8 * len(healthy_dataset))
+    mdd_train_size = int(0.8 * len(mdd_dataset))
+    hc_val_size = len(healthy_dataset) - hc_train_size
+    mdd_val_size = len(mdd_dataset) - mdd_train_size
+    generator = torch.Generator().manual_seed(42)  # for fixing the split for uncontaminated min/max
+    hc_train_dataset, hc_test_dataset = torch.utils.data.random_split(healthy_dataset, [hc_train_size, hc_val_size],
+                                                                      generator=generator)
+
+    batch_size = 64
+    bg_train_data = hc_train_dataset
+
+    bg_train_loader = torch.utils.data.DataLoader(bg_train_data, batch_size=batch_size, shuffle=True,
+                                                  collate_fn=custom_collate_fn,
+                                                  num_workers=16, generator=generator)
+
+    # Go through the rest of the dataset
+    sample_shape = (1, 160, 192, 160)
+
+    min_values = np.full(sample_shape, np.inf)
+    max_values = np.full(sample_shape, -np.inf)
+
+    for data in bg_train_loader:
+        image_data = data['image_data']
+        for img in image_data:
+            min_values = np.minimum(min_values, img)
+            max_values = np.maximum(max_values, img)
+    # save the min/max values
+    torch.save(min_values, 'min_values.pt')
+    torch.save(max_values, 'max_values.pt')
+    print(f'current min/max: {min_values}, {max_values}')  # current min/max: -189.0, 4647.0
+    # Split the data into batches
+    mdd_train_dataset, mdd_test_dataset = torch.utils.data.random_split(mdd_dataset, [mdd_train_size, mdd_val_size],
+                                                                        generator=generator)
+
+    tg_train_data = mdd_train_dataset
+    tg_train_loader = torch.utils.data.DataLoader(tg_train_data, batch_size=batch_size, shuffle=True,
+                                                  collate_fn=custom_collate_fn,
+                                                  num_workers=16)
+
+    for data in tg_train_loader:
+        data = data['image_data']
+        for img in image_data:
+            min_values = np.minimum(min_values, img)
+            max_values = np.maximum(max_values, img)
+            print('2 in progress...')
+
+    torch.save(min_values, 'min_val.pt')
+    torch.save(max_values, 'max_val.pt')
+    print(min_values, max_values)
+
+
+if __name__ == '__main__':
+    get_min_max()
+    HOME = os.environ['HOME']
+    root_dir = f'{HOME}/GenScotDepression/data/ukb/imaging/raw/t1_structural_nifti_20252'
+    csv_file = 'brain_age_info_retrained_sfcn_bc_filtered.csv'
+    min = torch.load('min_values.pt')
+    max = torch.load('max_values.pt')
+    diff = max - min
+    torch.save(diff, 'diff.pt')
+    print(min.min(), max.max())
