@@ -14,6 +14,7 @@ def filter_BAG_data(f='brain_age_info_bc.csv', fw='brain_age_info_bc.csv'):
     # load  brain_age_info_clean.csv in pandas
     df = pd.read_csv(f)
     df = df[df['brain_age'].notna()]
+    df = df[df['age'].notna()]
     df_mdd = df[df['MDD_status'] == 1.0]  # filter out MDD patients
     df_mdd_bag_bc = df_mdd['brain_age_unbiased'] - df_mdd['age']
     df_mdd_bag_bc = df_mdd_bag_bc[df_mdd_bag_bc > 2.5]
