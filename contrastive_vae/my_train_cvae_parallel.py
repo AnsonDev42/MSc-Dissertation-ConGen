@@ -23,7 +23,6 @@ writer = SummaryWriter(f'runs/cvae_{time_str}')
 torch.cuda.empty_cache()
 device = torch.device("cuda:3")
 device_ids = [3, 5, ]
-
 # Define hyperparameters
 learning_rate = 0.001
 epochs = 100
@@ -55,9 +54,10 @@ for name, buf in model.named_buffers():
         print(f"Buffer '{name}' is on device '{buf.device}', moving to device '{device}'")
         buf.data = buf.data.to(device)
 # model = torch.compile(model)
-
+    
 # Define the optimizer
-optimizer = optim.Adam(model.parameters(), lr=learning_rate)
+optimizer = optim.AdamW(model.parameters(), lr=learning_rate)
+scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=8, gamma=0.1, verbose=True)
 
 healthy_dataset = DataStoreDataset(root_dir, csv_file, on_the_fly=False, max_min=False)
 healthy_dataset.load_data_info(root_dir, csv_file, filter_func=filter_healthy)
@@ -175,16 +175,17 @@ for epoch in range(epochs):
                        {'Training': avg_epoch_loss, 'Validation': avg_val_loss},
                        epoch_number + 1)
     writer.flush()
+    scheduler.step()
     tg_z_means = np.concatenate(tg_z_means, axis=0)
     bg_z_means = np.concatenate(bg_z_means, axis=0)
-    plot_latent_space(tg_z_means, bg_z_means, f'epoch {epoch}')
+    plot_latent_space(tg_z_means, bg_z_means, name=f'validation(AdamW-withLRS)', epoch=epoch)
     # Check if this is the best model
     if avg_val_loss < best_loss:
         best_loss = avg_val_loss
         best_epoch = epoch_number
         torch.save(model.state_dict(), f'best_cvae_model_{time_str}.pth')
-    elif epoch_number - best_epoch >= 7:
-        print('Early stop for 7 epochs. Stopping training.')
+    elif epoch_number - best_epoch >= 15:
+        print('Early stop for 15 epochs. Stopping training.')
         torch.save(model.state_dict(), f'cvae_model_early_stop_at_{epoch_number}_{time_str}.pth')
         break
     epoch_number += 1
