@@ -47,19 +47,19 @@ def load_cached_filenames(csv_path=False):
     return df
 
 
-def create_depression_csv():
-    # check if major_depression.csv exists, if not create
-    if os.path.exists('Touchscreen.csv'):
-        print("already exists touch_screen.csv...")
-    else:
-        # this package can not load the specific rds, have to convert to csv in Rstudio
-        ts_data = pyreadr.read_r('2021-04-phenotypes-ukb44797/Touchscreen.rds')
-        print(ts_data.keys())
-        ts_data = ts_data[None]
-        ts_data.to_csv('touch_screen.csv', index=False)
-    ts_data = pd.read_csv('Touchscreen.csv', sep=',')
-    md_df = ts_data[ts_data['f.20125.0.0'] == 1]
-    return md_df
+# def create_depression_csv():
+#     # check if major_depression.csv exists, if not create
+#     if os.path.exists('Touchscreen.csv'):
+#         print("already exists touch_screen.csv...")
+#     else:
+#         # this package can not load the specific rds, have to convert to csv in Rstudio
+#         ts_data = pyreadr.read_r('2021-04-phenotypes-ukb44797/Touchscreen.rds')
+#         print(ts_data.keys())
+#         ts_data = ts_data[None]
+#         ts_data.to_csv('touch_screen.csv', index=False)
+#     ts_data = pd.read_csv('Touchscreen.csv', sep=',')
+#     md_df = ts_data[ts_data['f.20125.0.0'] == 1]
+#     return md_df
 
 
 def map_20126_str_to_int():
@@ -120,49 +120,49 @@ def add_age_info(curr_df=None, create_csv=False, name='filtered_with_age.csv'):
     return curr_df
 
 
-def filter_depression(curr_df=None, create_csv=False):
-    """
-    # Data-Field 20125 Description:	Probable recurrent major depression (severe)
-    # https://biobank.ctsu.ox.ac.uk/crystal/field.cgi?id=20125
-    """
-    # md_df = create_depression_csv()
-    ts_data = pd.read_csv('Touchscreen_20126md_int.csv', sep=',')
-    print('before merge, all the keys in Touchscreen_20126md_int')
-    print(f'length of ts_data {len(ts_data)}')
-    ts_data_counts = ts_data
-    print(ts_data_counts['f.20126.0.0'].value_counts().sort_index())
-    if curr_df is None:
-        raise NotImplementedError
-    else:
-        ts_data = ts_data.rename(columns={'f.eid': 'subjectID'})
-        # filtered = pd.merge(ts_data, curr_df, left_on='f.eid', right_on='subjectID', how='inner')
-
-        filtered = pd.merge(ts_data, curr_df, left_on='subjectID', right_on='subjectID', how='inner')
-
-        print('after inner merge...')
-        print(filtered['f.20126.0.0'].value_counts().sort_index())
-
-        # Define a dictionary to map index to description
-        index_description = {
-            0.0: 'No Bipolar or Depression',
-            1.0: 'Bipolar I Disorder',
-            2.0: 'Bipolar I Disorder',
-            3.0: 'Probable Recurrent major depression (severe)',
-            4.0: 'Probable Recurrent major depression (moderate)',
-            5.0: 'Single Probable major depression episode'
-        }
-        value_counts = filtered
-        # Get the value counts
-        # value_counts = value_counts['f.20126.0.0'].value_counts().rename('count').reset_index().rename(columns={'index': 'index_value'})
-
-        # Add the description column using the map function
-        # value_counts['description'] = value_counts['index_value'].map(index_description)
-
-        # Print the value counts with descriptions
-        # print(value_counts)
-        if create_csv:
-            filtered.to_csv('filtered_depression.csv', index=False)
-        return filtered
+# def filter_depression(curr_df=None, create_csv=False):
+#     """
+#     # Data-Field 20125 Description:	Probable recurrent major depression (severe)
+#     # https://biobank.ctsu.ox.ac.uk/crystal/field.cgi?id=20125
+#     """
+#     # md_df = create_depression_csv()
+#     ts_data = pd.read_csv('Touchscreen_20126md_int.csv', sep=',')
+#     print('before merge, all the keys in Touchscreen_20126md_int')
+#     print(f'length of ts_data {len(ts_data)}')
+#     ts_data_counts = ts_data
+#     print(ts_data_counts['f.20126.0.0'].value_counts().sort_index())
+#     if curr_df is None:
+#         raise NotImplementedError
+#     else:
+#         ts_data = ts_data.rename(columns={'f.eid': 'subjectID'})
+#         # filtered = pd.merge(ts_data, curr_df, left_on='f.eid', right_on='subjectID', how='inner')
+#
+#         filtered = pd.merge(ts_data, curr_df, left_on='subjectID', right_on='subjectID', how='inner')
+#
+#         print('after inner merge...')
+#         print(filtered['f.20126.0.0'].value_counts().sort_index())
+#
+#         # Define a dictionary to map index to description
+#         index_description = {
+#             0.0: 'No Bipolar or Depression',
+#             1.0: 'Bipolar I Disorder',
+#             2.0: 'Bipolar I Disorder',
+#             3.0: 'Probable Recurrent major depression (severe)',
+#             4.0: 'Probable Recurrent major depression (moderate)',
+#             5.0: 'Single Probable major depression episode'
+#         }
+#         value_counts = filtered
+#         # Get the value counts
+#         # value_counts = value_counts['f.20126.0.0'].value_counts().rename('count').reset_index().rename(columns={'index': 'index_value'})
+#
+#         # Add the description column using the map function
+#         # value_counts['description'] = value_counts['index_value'].map(index_description)
+#
+#         # Print the value counts with descriptions
+#         # print(value_counts)
+#         if create_csv:
+#             filtered.to_csv('filtered_depression.csv', index=False)
+#         return filtered
 
 
 # def filter_diabetes(curr_df=None, create_csv=False):
@@ -225,28 +225,26 @@ def filter_na_data(unfiltered_file='unfiltered_mdd_db_age.csv'):
     # filter out diabetes data if all 4 columns are nan (f.2976._.0)    2976: Age diabetes diagnosed
     data = data[data['f.2976.2.0'].isna() & data['f.2976.3.0'].isna()]
     # data = data[data['f.2976.2.0'].notna() | data['f.2976.3.0'].notna()]
+    # print(f'length of filtered_data from non-nan DB  {len(data)}')
+    data = data[
+        (data['f.2976.0.0'] >= 1) | (data['f.2976.1.0'] >= 1) | (data['f.2976.2.0'] >= 1) | (data['f.2976.3.0'] >= 1)]
     print(f'length of filtered_data from non-nan DB  {len(data)}')
-    # data = data[
-    #     (data['f.2976.0.0'] >= 1) | (data['f.2976.1.0'] >= 1) | (data['f.2976.2.0'] >= 1) | (data['f.2976.3.0'] >= 1)]
-
     data.to_csv('filtered_mdd_db_age.csv', index=False)
     print('filtered_mdd_db_age.csv created')
     return data
 
 
-if __name__ == '__main__':
-    curr_df = create_cached_t1_filenames(create_csv=False)
-    # filtered_df = filter_depression(curr_df=curr_df, create_csv=True)
-    # filtered_df = filter_diabetes(curr_df=filtered_df, create_csv=True)
-    #
-    # create_unfiltered_mdd_db_csv()
+def create_filter_file_mdd():
     filtered_df = pd.read_csv('unfiltered_mdd_db.csv', sep=',')
     filtered_df = filtered_df.rename(columns={'f.eid': 'subjectID'})
     # print('start merge with curr_df for mdd + db')
     filtered_df = pd.merge(curr_df, filtered_df, on='subjectID', how='inner')
     # print('start add age info for mdd + db')
     filtered_df = add_age_info(filtered_df, create_csv=True, name='unfiltered_mdd_db_age.csv')
-    data = filter_na_data('unfiltered_mdd_db_age.csv')
+    # data = filter_na_data('unfiltered_mdd_db_age.csv')
+    data = filtered_df
+    data = data[data['f.21003.2.0'].notna() | data[
+        'f.21003.3.0'].notna()]  # 21003: Age when attended assessment centre
     depression = data[
         (data['f.20126.0.0'] == 'Probable Recurrent major depression (severe)') |
         (data['f.20126.0.0'] == 'Probable Recurrent major depression (moderate)') |
@@ -286,3 +284,48 @@ if __name__ == '__main__':
         mdd_data = pd.merge(mdd_data, depression, on='subjectID', how='inner')
 
         print(f'length of same mdd_data {len(mdd_data)}')
+
+
+def create_filter_file_db():
+    curr_df = create_cached_t1_filenames(create_csv=False)
+    print(f'current path {os.getcwd()}')
+    filtered_df = pd.read_csv('unfiltered_mdd_db.csv', sep=',')
+    filtered_df = filtered_df.rename(columns={'f.eid': 'subjectID'})
+    # print('start merge with curr_df for mdd + db')
+    filtered_df = pd.merge(curr_df, filtered_df, on='subjectID', how='inner')
+    # print('start add age info for mdd + db')
+    filtered_df = add_age_info(filtered_df, create_csv=True, name='unfiltered_mdd_db_age.csv')
+    # data = filter_na_data('unfiltered_mdd_db_age.csv')
+    data = filtered_df
+    # data['depression'] = data['f.20126.0.0'].apply(lambda x: 1 if x in ['Probable Recurrent major depression (severe)',
+    #                                                                     'Probable Recurrent major depression (moderate)',
+    #                                                                     'Single Probable major depression episode']
+    # else 0)  # if x == 'No Bipolar or Depression'
+    # else np.nan)
+    data['depression'] = data['f.20126.0.0'].apply(lambda x: 0 if x == 'No Bipolar or Depression' else 1)
+    # data['depression'] = np.where((data['f.20126.0.0'].isna()), 0, 1)
+
+    # filterout all nan db
+    data = data[data['depression'] == 0]
+
+    data['db'] = np.where((data['f.2976.2.0'].notna()) | (data['f.2976.3.0'].notna()), 1, 0)
+    db = data[data['db'] == 1]
+    data.to_csv('filtered_mdd_db_age_DB.csv', index=False)
+
+    print(f'length of all 0/nan- depression data {len(data)}')
+    print(f'length of db {len(db)}')
+    print(f"length of healthy ppl with nan db {len(data[data['db'] == 0])}")
+
+    assert len(data[data['db'] == 1]) == len(
+        db), f"length of data[data['db'] == 1] {len(data[data['db'] == 1])}db {len(db)}"
+    # chceck with yunfei's data
+
+
+if __name__ == '__main__':
+    curr_df = create_cached_t1_filenames(create_csv=False)
+    # filtered_df = filter_depression(curr_df=curr_df, create_csv=True)
+    # filtered_df = filter_diabetes(curr_df=filtered_df, create_csv=True)
+    #
+    # create_unfiltered_mdd_db_csv()
+    # create_filter_file_mdd()
+    create_filter_file_db()

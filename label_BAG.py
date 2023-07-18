@@ -269,20 +269,23 @@ def label_writer_batch(filename='brain_age_info.csv', gpu=True):
     print("brain age info file written")
 
 
-def label_data_batch_my_model():
-    gpu = 'cuda:0' if torch.cuda.is_available() else 'cpu'
+def label_data_batch_my_model(need_db=False):
+    gpu = 'cuda:1' if torch.cuda.is_available() else 'cpu'
     device = torch.device(gpu)
     sfcn = sfcn_loader(gpu=gpu, eval=True, weights='best_model_1107_2346.pth')
     # load the dataset
     HOME = os.environ['HOME']
     root_dir = f'{HOME}/GenScotDepression/data/ukb/imaging/raw/t1_structural_nifti_20252'
-    csv_file = 'data/filtered_mdd_db_age.csv'
-    depressed_dataset = DataStoreDataset(root_dir, csv_file, )
-    depressed_dataset.load_data_info(root_dir, csv_file, filter_func=None)
-    dataloader = DataLoader(depressed_dataset, batch_size=1, shuffle=False, collate_fn=custom_collate_fn)
+    if need_db:
+        csv_file = 'data/filtered_mdd_db_age_DB.csv'
+    else:
+        csv_file = 'data/filtered_mdd_db_age.csv'
+    eval_dataset = DataStoreDataset(root_dir, csv_file, )
+    eval_dataset.load_data_info(root_dir, csv_file, filter_func=None)
+    dataloader = DataLoader(eval_dataset, batch_size=1, shuffle=False, collate_fn=custom_collate_fn)
 
     # using pd create a dataframe
-    df = pd.DataFrame(columns=['study', 'filename', 'age', 'brain_age', 'MDD_status'])
+    df = pd.DataFrame(columns=['study', 'filename', 'age', 'brain_age', 'MDD_status', 'db'])
     with torch.no_grad():
         for i, batch in enumerate(dataloader):
             if batch is None or 'image_data' not in batch.keys():
@@ -300,6 +303,8 @@ def label_data_batch_my_model():
             bc = batch['bc']
             study = batch['study'][0]
             age = int(batch['age'].item())
+            if need_db:
+                db = int(batch['db'][0])
 
             output = sfcn.module(inputs)
 
@@ -316,12 +321,22 @@ def label_data_batch_my_model():
             bc = bc.numpy().reshape(-1)
             prob = np.exp(x)
             pred = prob @ bc
-            print(f"study: {study}, filename: {filename}, age: {age}, brain age: {pred}, MDD_status: {mdd_status}")
-            new_row = {'study': study, 'filename': filename, 'age': age, 'brain_age': pred, 'MDD_status': mdd_status}
+            new_row = {'study': study, 'filename': filename, 'age': age, 'brain_age': pred,
+                       'MDD_status': mdd_status, }
+            if not need_db:
+                print(
+                    f"study: {study}, filename: {filename}, age: {age}, brain age: {pred}, MDD_status: {mdd_status}")
+            else:
+                print(
+                    f"study: {study}, filename: {filename}, age: {age}, brain age: {pred}, MDD_status: {mdd_status}, db: {db}")
+                new_row['db'] = db
             df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
     # add 'depression' column as the same as 'MDD_status'
     df['depression'] = df['MDD_status']
-    df.to_csv('brain_age_info_retrained_sfcn_ttt.csv')
+    if need_db:
+        df.to_csv('brain_age_info_retrained_sfcn_db.csv')
+    else:
+        df.to_csv('brain_age_info_retrained_sfcn_ttt.csv')
 
 
 if __name__ == '__main__':
@@ -339,7 +354,7 @@ if __name__ == '__main__':
     # label_writer()
     # label_writer_batch()
 
-    label_data_batch_my_model()
+    label_data_batch_my_model(need_db=True)
     exit(0)
     import csv
 

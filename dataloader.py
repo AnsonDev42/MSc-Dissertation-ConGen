@@ -149,7 +149,8 @@ class DataStoreDataset(CustomDataset):
         sample = {'image_data': data, 'age': age, 'root_dir': self.root_dir, 'study': 'ukb',
                   'filename': row['filename'], 'mdd_status': row['depression'],
                   'extracted_path': extracted_path, 'age_bin': labels, 'bc': bc}
-
+        if 'db' in row:  # add for db
+            sample['db'] = row['db']
         # remove the temporary files
         if self.on_the_fly:
             self._cleanup_temp_dir(tmp_dir)
@@ -172,9 +173,9 @@ class DataStoreDataset(CustomDataset):
             data = torch.tensor(data)
             data = (data - self.min) / self.diff
         label = np.array([age, ])
-        # bin_range, bin_step = get_bin_range_step(age=label)
-        # labels, bc = dpu.num2vect(label, bin_range, bin_step, sigma=1)
-        labels, bc = -1, -1
+        bin_range, bin_step = get_bin_range_step(age=label)
+        labels, bc = dpu.num2vect(label, bin_range, bin_step, sigma=1)
+        # labels, bc = -1, -1
         return data, labels, bc
 
     def _cleanup_temp_dir(self, tmp_dir):
