@@ -15,15 +15,14 @@ HOME = os.environ['HOME']
 root_dir = f'{HOME}/GenScotDepression/data/ukb/imaging/raw/t1_structural_nifti_20252'
 # csv_file = './../data/filtered_mdd_db_age.csv'
 csv_file = f'./../brain_age_info_retrained_sfcn_bc_filtered.csv'
-# csv_file = f'./brain_age_info_retrained_sfcn_bc_filtered.csv'
 # current time in ddmm_hhmm format
 now = datetime.datetime.now()
 time_str = now.strftime("%d%m_%H%M")
+fname = f'AdamW-withLRS-sigmoid{time_str}'
 writer = SummaryWriter(f'runs/cvae_{time_str}')
 torch.cuda.empty_cache()
-device = torch.device("cuda:3")
-device_ids = [3, 5, ]
-# Define hyperparameters
+device = torch.device("cuda:4")
+device_ids = [4, 5, ]
 learning_rate = 0.001
 epochs = 100
 batch_size = 4  # from 32 # NOTE: Using the batch size must be divisible by (the number of GPUs * 2) # see
@@ -34,7 +33,7 @@ intermediate_dim = 128  # 256
 latent_dim = 2
 beta = 1.  # 1
 disentangle = True
-gamma = 1.0  # 5
+gamma = 1.  # 5
 model = ContrastiveVAE(input_dim, intermediate_dim, latent_dim, beta, disentangle, gamma)
 
 model = nn.DataParallel(model, device_ids=device_ids)
@@ -54,7 +53,7 @@ for name, buf in model.named_buffers():
         print(f"Buffer '{name}' is on device '{buf.device}', moving to device '{device}'")
         buf.data = buf.data.to(device)
 # model = torch.compile(model)
-    
+
 # Define the optimizer
 optimizer = optim.AdamW(model.parameters(), lr=learning_rate)
 scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=8, gamma=0.1, verbose=True)
@@ -122,7 +121,7 @@ for epoch in range(epochs):
             tg_z_mean, tg_z_log_var, \
             tg_s_mean, tg_s_log_var, \
             bg_z_mean, bg_z_log_var, \
-            tc_loss, discriminator_loss = output
+            tc_loss, discriminator_loss, _, _ = output
         loss = cvae_loss(input_dim, tg_inputs, bg_inputs, tg_outputs, bg_outputs, tg_z_mean, tg_z_log_var,
                          tg_s_mean, tg_s_log_var, bg_z_mean, bg_z_log_var, beta, disentangle, gamma,
                          tc_loss, discriminator_loss)
@@ -148,6 +147,8 @@ for epoch in range(epochs):
     num_val_batches = 0
     tg_z_means = []
     bg_z_means = []
+    tg_z_mean_total = []
+    bg_z_mean_total = []
     with torch.no_grad():
         disentangle = False
         model.eval()
@@ -161,13 +162,21 @@ for epoch in range(epochs):
             # bg_inputs = (bg_inputs - min) / diff
             output = model(tg_inputs, bg_inputs)
             tg_outputs, bg_outputs, tg_z_mean, tg_z_log_var, tg_s_mean, tg_s_log_var, bg_z_mean, bg_z_log_var, \
-                _, _ = output
-            tg_z_means.append(tg_z_mean.cpu())
-            bg_z_means.append(bg_z_mean.cpu())
+                _, _, _, _ = output
+            # tg_z_means.append(tg_z_mean.cpu())
+            # bg_z_means.append(bg_z_mean.cpu())
             loss = cvae_loss(input_dim, tg_inputs, bg_inputs, tg_outputs, bg_outputs, tg_z_mean, tg_z_log_var,
                              tg_s_mean, tg_s_log_var, bg_z_mean, bg_z_log_var, beta, disentangle, gamma)
             running_vloss += loss.item()
             num_val_batches += 1
+            # tg_z_total.append(tg_z.detach().cpu().reshape(-1, 2))
+            # bg_z_total.append(bg_z.detach().cpu().reshape(-1, 2))
+            tg_z_mean_total.append(tg_z_mean.cpu().reshape(-1, 2))
+            bg_z_mean_total.append(bg_z_mean.cpu().reshape(-1, 2))
+    tg_z_mean_total = np.concatenate(tg_z_mean_total, axis=0)
+    bg_z_mean_total = np.concatenate(bg_z_mean_total, axis=0)
+    plot_latent_space(tg_z_mean_total, bg_z_mean_total, name=fname, epoch=epoch)
+
     avg_val_loss = running_vloss / num_val_batches  # average validation loss
     print(f'Epoch: {epoch + 1}/{epochs}, Validation Loss: {avg_val_loss:.4f}')
     writer.add_scalar('validation loss', avg_val_loss, epoch)
@@ -176,9 +185,6 @@ for epoch in range(epochs):
                        epoch_number + 1)
     writer.flush()
     scheduler.step()
-    tg_z_means = np.concatenate(tg_z_means, axis=0)
-    bg_z_means = np.concatenate(bg_z_means, axis=0)
-    plot_latent_space(tg_z_means, bg_z_means, name=f'validation(AdamW-withLRS)', epoch=epoch)
     # Check if this is the best model
     if avg_val_loss < best_loss:
         best_loss = avg_val_loss
@@ -188,6 +194,7 @@ for epoch in range(epochs):
         print('Early stop for 15 epochs. Stopping training.')
         torch.save(model.state_dict(), f'cvae_model_early_stop_at_{epoch_number}_{time_str}.pth')
         break
+    print(f'Best epoch: {best_epoch + 1}, Best loss: {best_loss:.4f}')
     epoch_number += 1
 print('Finished Training CVAE')
 writer.close()
