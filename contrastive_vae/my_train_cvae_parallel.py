@@ -6,7 +6,7 @@ import torch.optim as optim
 import numpy as np
 from torch.utils.tensorboard import SummaryWriter
 
-from my_vae_utils import plot_latent_space
+from my_vae_utils import plot_latent_space, plot_32d_latent_space
 from my_vae_utils import ContrastiveVAE, cvae_loss
 from dataloader import DataStoreDataset, filter_healthy, filter_depressed, custom_collate_fn
 from torch.nn.parallel import DataParallel
@@ -19,23 +19,23 @@ csv_file = f'./../brain_age_info_retrained_sfcn_bc_filtered.csv'
 now = datetime.datetime.now()
 time_str = now.strftime("%d%m_%H%M")
 fname = f'AdamW-withLRS-sigmoid{time_str}'
-writer = SummaryWriter(f'runs/cvae_{time_str}')
+writer = SummaryWriter(f'runs/cvae_32d_{time_str}')
 torch.cuda.empty_cache()
-device = torch.device("cuda:4")
-device_ids = [4, 5, ]
+device = torch.device("cuda:2")
+device_ids = [2, 5, ]
 learning_rate = 0.001
 epochs = 100
 batch_size = 4  # from 32 # NOTE: Using the batch size must be divisible by (the number of GPUs * 2) # see
 
 # Instantiate the model
-input_dim = (1, 160, 192, 160)  # 784
+input_dim = (1, 64, 64, 64)  # 784 = (1, 160, 192, 160)
 intermediate_dim = 128  # 256
-latent_dim = 2
-beta = 1.  # 1
+latent_dim = 32
+beta = 0.01  # 1
 disentangle = True
 gamma = 1.  # 5
 model = ContrastiveVAE(input_dim, intermediate_dim, latent_dim, beta, disentangle, gamma)
-
+print(f'Model configuration: latent_dim={latent_dim}, beta={beta}, gamma={gamma}')
 model = nn.DataParallel(model, device_ids=device_ids)
 model.to(device)
 # min = torch.load('./../min_values.pt').unsqueeze(0).to(dtype=torch.float32, device=device)
@@ -175,7 +175,7 @@ for epoch in range(epochs):
             bg_z_mean_total.append(bg_z_mean.cpu().reshape(-1, 2))
     tg_z_mean_total = np.concatenate(tg_z_mean_total, axis=0)
     bg_z_mean_total = np.concatenate(bg_z_mean_total, axis=0)
-    plot_latent_space(tg_z_mean_total, bg_z_mean_total, name=fname, epoch=epoch)
+    plot_32d_latent_space(tg_z_mean_total, bg_z_mean_total, name=fname, epoch=epoch)
 
     avg_val_loss = running_vloss / num_val_batches  # average validation loss
     print(f'Epoch: {epoch + 1}/{epochs}, Validation Loss: {avg_val_loss:.4f}')

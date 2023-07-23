@@ -13,6 +13,7 @@ import h5py
 import nibabel as nib
 from dp_model import dp_utils as dpu
 from sfcn_helper import get_bin_range_step
+import skimage.transform as skt
 
 
 class CustomDataset(Dataset):
@@ -162,13 +163,17 @@ class DataStoreDataset(CustomDataset):
         data = data.astype(np.float32)
         # data = data / data.mean()
         data = dpu.crop_center(data, (160, 192, 160))
+
         # data = (data - min) / diff
         # normalise data by min max in all dimensions
-        data = data.reshape([1, 160, 192, 160])
+        # data = data.reshape([1, 160, 192, 160])
         min = data.min()
         max = data.max()
         diff = max - min
         data = (data - min) / diff
+        # resample to 64 * 64* 64
+        data = skt.resize(data, (64, 64, 64), order=1, preserve_range=True, anti_aliasing=True)
+        data = data.reshape([1, 64, 64, 64])
         if self.max_min:
             data = torch.tensor(data)
             data = (data - self.min) / self.diff
@@ -296,12 +301,20 @@ def get_min_max():
 
 
 if __name__ == '__main__':
-    get_min_max()
+    # get_min_max()
     HOME = os.environ['HOME']
     root_dir = f'{HOME}/GenScotDepression/data/ukb/imaging/raw/t1_structural_nifti_20252'
     csv_file = 'brain_age_info_retrained_sfcn_bc_filtered.csv'
-    min = torch.load('min_values.pt')
-    max = torch.load('max_values.pt')
-    diff = max - min
-    torch.save(diff, 'diff.pt')
-    print(min.min(), max.max())
+    healthy_dataset = DataStoreDataset(root_dir, csv_file, on_the_fly=False, max_min=False, )
+    healthy_dataset.load_data_info(root_dir, csv_file, filter_func=None)
+    # iteraate first sample to see its shape
+    for i in range(len(healthy_dataset)):
+        sample = healthy_dataset[i]
+        print(sample['image_data'].shape)
+        print(sample['image_data'].min(), sample['image_data'].max())
+        break
+    # min = torch.load('min_values.pt')
+    # max = torch.load('max_values.pt')
+    # diff = max - min
+    # torch.save(diff, 'diff.pt')
+    # print(min.min(), max.max())
