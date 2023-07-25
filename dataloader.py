@@ -109,11 +109,11 @@ class CustomDataset(Dataset):
 
 
 def filter_depressed(row):
-    return row['depression'] == 1
+    return row['mdd_ac_status'] != 0. and row['BAG_BC_gt_1'] == 1
 
 
 def filter_healthy(row):
-    return row['depression'] == 0
+    return row['mdd_ac_status'] == 0. and row['BAG_BC_gt_1'] == 1
 
 
 class DataStoreDataset(CustomDataset):
@@ -152,6 +152,8 @@ class DataStoreDataset(CustomDataset):
                   'extracted_path': extracted_path, 'age_bin': labels, 'bc': bc}
         if 'db' in row:  # add for db
             sample['db'] = row['db']
+        if 'mdd_ac_status' in row:
+            sample['mdd_ac_status'] = row['mdd_ac_status']
         # remove the temporary files
         if self.on_the_fly:
             self._cleanup_temp_dir(tmp_dir)
@@ -161,22 +163,27 @@ class DataStoreDataset(CustomDataset):
     def preprocessing(self, extracted_path, age):
         data = nib.load(extracted_path).get_fdata()
         data = data.astype(np.float32)
-        # data = data / data.mean()
+        # for sfcn starts #
+        """
+        data = data / data.mean()  # disable here
         data = dpu.crop_center(data, (160, 192, 160))
-
-        # data = (data - min) / diff
         # normalise data by min max in all dimensions
-        # data = data.reshape([1, 160, 192, 160])
+        data = data.reshape([1, 160, 192, 160])
+        """
+        # for sfcn ends #
+
+        # for cvae starts #
         min = data.min()
         max = data.max()
         diff = max - min
         data = (data - min) / diff
-        # resample to 64 * 64* 64
+        # # resample to 64 * 64* 64
         data = skt.resize(data, (64, 64, 64), order=1, preserve_range=True, anti_aliasing=True)
         data = data.reshape([1, 64, 64, 64])
-        if self.max_min:
-            data = torch.tensor(data)
-            data = (data - self.min) / self.diff
+        # for cvae ends #
+        # if self.max_min:
+        #     data = torch.tensor(data)
+        #     data = (data - self.min) / self.diff
         label = np.array([age, ])
         bin_range, bin_step = get_bin_range_step(age=label)
         labels, bc = dpu.num2vect(label, bin_range, bin_step, sigma=1)
@@ -304,9 +311,13 @@ if __name__ == '__main__':
     # get_min_max()
     HOME = os.environ['HOME']
     root_dir = f'{HOME}/GenScotDepression/data/ukb/imaging/raw/t1_structural_nifti_20252'
-    csv_file = 'brain_age_info_retrained_sfcn_bc_filtered.csv'
+    csv_file = 'brain_age_info_retrained_sfcn_4label_mdd_ac_bc_masked_filtered.csv'
     healthy_dataset = DataStoreDataset(root_dir, csv_file, on_the_fly=False, max_min=False, )
-    healthy_dataset.load_data_info(root_dir, csv_file, filter_func=None)
+    healthy_dataset.load_data_info(root_dir, csv_file, filter_func=filter_healthy)
+    print(f'len of healthy:{len(healthy_dataset)}')
+    dep = DataStoreDataset(root_dir, csv_file, on_the_fly=False, max_min=False, )
+    dep.load_data_info(root_dir, csv_file, filter_func=filter_depressed)
+    print(f'len of non-healthy:{len(dep)}')
     # iteraate first sample to see its shape
     for i in range(len(healthy_dataset)):
         sample = healthy_dataset[i]

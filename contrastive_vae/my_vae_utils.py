@@ -70,7 +70,7 @@ class Encoder(nn.Module):
         self.z_h_layers_bn = nn.BatchNorm1d(intermediate_dim)
         self.z_mean_layer_bn = nn.BatchNorm1d(latent_dim)
         self.z_log_var_layer_bn = nn.BatchNorm1d(latent_dim)
-        # self.bn3 = nn.BatchNorm3d(filters * 8)
+        self.z_bn = nn.BatchNorm1d(latent_dim)
 
     def forward(self, x):
         x = self.z_conv1(x)
@@ -91,6 +91,8 @@ class Encoder(nn.Module):
         z_log_var = self.z_log_var_layer(z_h)
         z_log_var = self.z_log_var_layer_bn(z_log_var)
         z = self.sampler((z_mean, z_log_var))
+        z = self.z_bn(z)
+
         assert z.shape[1:] == (self.latent_dim,)
         return z_mean, z_log_var, z, z_shape
 
@@ -331,21 +333,34 @@ def plot_latent_space(tg_z_mean_total, bg_z_mean_total, plot=True, name='test_im
 from sklearn.manifold import TSNE
 
 
-def plot_32d_latent_space(tg_z_mean_total, bg_z_mean_total, plot=True, name='test_img', epoch=0):
-    # Create a t-SNE object
-    tsne = TSNE(n_components=2)
+def plot_32d_latent_space(tg_z_mean_total, bg_z_mean_total, tg_label, bg_label, plot=True, name='test_img', epoch=0):
+    print(f'shape of z_labels_total:{tg_label.shape}')
+    print(f'shape of tg_z_mean_total: {tg_z_mean_total.shape}')
+    print(f'shape of bg_z_mean_total: {bg_z_mean_total.shape}')
+    print(f'shape of tg_label: {tg_label.shape}')
+    print(f'shape of bg_label: {bg_label.shape}')
 
-    # Concatenate all the latent vectors
+    # Concatenate the latent vectors and labels
     z = np.concatenate((tg_z_mean_total, bg_z_mean_total), axis=0)
+    z_label = np.concatenate((tg_label.ravel(), bg_label.ravel()), axis=0)
+    n_samples = z.shape[0]
 
-    # Transform the concatenated latent vectors into 2D
+    # Set perplexity to a value less than the number of samples
+    perplexity = min(30, n_samples - 1)
+
+    # Perform t-SNE with the adjusted perplexity
+    tsne = TSNE(n_components=2, perplexity=perplexity)
     z_2d = tsne.fit_transform(z)
 
-    # Split the 2D representations
-    tg_z_2d, bg_z_2d = np.split(z_2d, [tg_z_mean_total.shape[0]])
+    # Create a scatter plot
+    plt.figure(figsize=(8, 8))
 
-    # Calculate the silhouette score
-    z_label = np.concatenate((np.ones(tg_z_mean_total.shape[0]), np.zeros(bg_z_mean_total.shape[0])), axis=0)
+    # Define a color map
+    colors = ['blue', 'orange', 'green', 'red']
+
+    # plt.legend()
+    # plt.title('t-SNE plot of 32-dimensional data')
+    # plt.show()
     ss = round(silhouette_score(z_2d, z_label), 3)
 
     if not os.path.exists(f'cvae_results/{name}'):
@@ -353,10 +368,20 @@ def plot_32d_latent_space(tg_z_mean_total, bg_z_mean_total, plot=True, name='tes
 
     if plot:
         plt.figure()
-        plt.scatter(tg_z_2d[:, 0], tg_z_2d[:, 1], c='b', label='tg_z(target)')
-        plt.scatter(bg_z_2d[:, 0], bg_z_2d[:, 1], c='r', label='bg_z(background)')
+        # plt.scatter(tg_z_2d[:, 0], tg_z_2d[:, 1], c='b', label=f'{tg_label}')
+        # plt.scatter(bg_z_2d[:, 0], bg_z_2d[:, 1], c='r', label=f'{bg_label}')
+        lb = {
+            0: 'HC',
+            1: 'MDD only',
+            2: 'AC only',
+            3: 'MDD & AC',
+        }
+        for i in range(4):
+            # Plot each group separately
+            plt.scatter(z_2d[z_label == i, 0], z_2d[z_label == i, 1], c=colors[i], label=f'{lb[i]}')
+
         plt.legend()  # Displays a legend
-        plt.title(f'Epoch:{epoch}-{name}, Silhouette score: {str(ss)}')
+        plt.title(f'Epoch:{epoch}-{name}(t-SNE plot of 32-d) | Silhouette score: {str(ss)}')
         plt.savefig(f'cvae_results/{name}/{epoch}.svg')  # Change the path and filename as needed
         plt.savefig(f'cvae_results/{name}/{epoch}.png')  # Change the path and filename as needed
         plt.close()
@@ -399,9 +424,9 @@ if __name__ == '__main__':
     input_dim = (1, 64, 64, 64)  # 784
     intermediate_dim = 128  # 256
     latent_dim = 16
-    beta = 1
+    beta = 0.1
     disentangle = True
-    gamma = 0
+    gamma = 1
     model = ContrastiveVAE(input_dim, intermediate_dim, latent_dim, beta, disentangle, gamma)
     # model = nn.DataParallel(model, device_ids=[4, 1])  # Wrap the model with DataParallel
     model.to(device)
@@ -418,9 +443,12 @@ if __name__ == '__main__':
     # model = torch.compile(model)
     tg_inputs = torch.randn(4, 1, 64, 64, 64).to(dtype=torch.float32)
     bg_inputs = torch.randn(4, 1, 64, 64, 64).to(dtype=torch.float32)
+    tg_labels = torch.randint(4, (4, 1)).to(dtype=torch.float32)
+    bg_labels = torch.randint(4, (4, 1)).to(dtype=torch.float32)
+
     tg_inputs = tg_inputs.to(device)
     bg_inputs = bg_inputs.to(device)
-    tg_z_total, bg_z_total, tg_z_mean_total, bg_z_mean_total = [], [], [], []
+    tg_z_total, bg_z_total, tg_z_mean_total, bg_z_mean_total, tg_labels_total, bg_labels_total = [], [], [], [], [], []
 
     tg_outputs, bg_outputs, tg_z_mean, tg_z_log_var, tg_s_mean, tg_s_log_var, bg_z_mean, bg_z_log_var, \
         tc_loss, discriminator_loss, tg_z, bg_z = model(tg_inputs,
@@ -437,15 +465,23 @@ if __name__ == '__main__':
 
     # tg_z_mean.cpu(), bg_z_mean.cpu()
 
-    tg_z_total.append(tg_z.detach().cpu().reshape(-1, 2))
-    bg_z_total.append(bg_z.detach().cpu().reshape(-1, 2))
-    tg_z_mean_total.append(tg_z_mean.detach().cpu().reshape(-1, 2))
-    bg_z_mean_total.append(bg_z_mean.detach().cpu().reshape(-1, 2))
+    tg_z_total.append(tg_z.detach().cpu().reshape(-1, 16))
+    bg_z_total.append(bg_z.detach().cpu().reshape(-1, 16))
+    tg_z_mean_total.append(tg_z_mean.detach().cpu().reshape(-1, 16))
+    bg_z_mean_total.append(bg_z_mean.detach().cpu().reshape(-1, 16))
+    tg_labels_total.append(tg_labels.cpu().reshape(-1, 1))
+    bg_labels_total.append(bg_labels.cpu().reshape(-1, 1))
+
     tg_z_mean_total = np.concatenate(tg_z_mean_total, axis=0)
     bg_z_mean_total = np.concatenate(bg_z_mean_total, axis=0)
-    print(f"tg_z_mean_total shape {tg_z_mean_total.shape}")
+    tg_labels_total = np.concatenate(tg_labels_total, axis=0)
+    bg_labels_total = np.concatenate(bg_labels_total, axis=0)
+    print(f'tg_labels_total shape {tg_labels_total.shape}')
+    print(f"tc{tg_z_mean_total.shape}")
     print(f"bg_z_mean_total shape {bg_z_mean_total.shape}")
-    ss = plot_32d_latent_space(tg_z_mean_total=tg_z_mean_total, bg_z_mean_total=bg_z_mean_total, plot=True,
+    ss = plot_32d_latent_space(tg_z_mean_total=tg_z_mean_total, bg_z_mean_total=bg_z_mean_total,
+                               tg_label=tg_labels_total, bg_label=tg_labels_total,
+                               plot=True,
                                name='test_img_32d')
     # ss = plot_latent_space(tg_z_mean_total=tg_z_mean_total, bg_z_mean_total=bg_z_mean_total, plot=True, name='test_img')
     print(f"ss: {ss}")

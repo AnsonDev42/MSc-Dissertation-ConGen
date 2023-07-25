@@ -1,5 +1,3 @@
-import bz2
-
 import numpy as np
 import pandas as pd
 import pyreadr
@@ -8,10 +6,10 @@ import os
 
 def create_cached_t1_filenames(create_csv=False):
     """
-    Load the cached filenames from the txt file
+	Load the cached filenames from the txt file
 
-    :return: a list of filenames
-    """
+	:return: a list of filenames
+	"""
 
     # subjectID_fieldID_definedInstance_arrayIndex
     # each line is a filename, e.g. 6022573_20252_2_0.zip is a filename that contains the data of subject 6022573,
@@ -64,16 +62,16 @@ def load_cached_filenames(csv_path=False):
 
 def map_20126_str_to_int():
     """
-    convert the string to int
-        0 No Bipolar or Depression
-        1 Bipolar I Disorder
-        2 Bipolar II Disorder
-        3 Probable Recurrent major depression (severe)
-        4 Probable Recurrent major depression (moderate)
-        5 Single Probable major depression episode
+	convert the string to int
+		0 No Bipolar or Depression
+		1 Bipolar I Disorder
+		2 Bipolar II Disorder
+		3 Probable Recurrent major depression (severe)
+		4 Probable Recurrent major depression (moderate)
+		5 Single Probable major depression episode
 
-    :return: mapped csv
-    """
+	:return: mapped csv
+	"""
 
     ts_data = pd.read_csv('Touchscreen_20126md.csv', sep=',')
     print(ts_data.head())
@@ -95,13 +93,13 @@ def map_20126_str_to_int():
 
 def add_age_info(curr_df=None, create_csv=False, name='filtered_with_age.csv'):
     """
-    This func adds Age when attended assessment centre (21003)  into the dataframe
-     (https://biobank.ndph.ox.ac.uk/showcase/field.cgi?id=21003)
+	This func adds Age when attended assessment centre (21003)  into the dataframe
+	 (https://biobank.ndph.ox.ac.uk/showcase/field.cgi?id=21003)
 
-    :param curr_df:
-    :param create_csv:
-    :return:
-    """
+	:param curr_df:
+	:param create_csv:
+	:return:
+	"""
     if curr_df is None:
         # load md int file
         with open('Touchscreen_20126md_int.csv', 'rb') as f:
@@ -206,32 +204,34 @@ def add_age_info(curr_df=None, create_csv=False, name='filtered_with_age.csv'):
 def create_unfiltered_mdd_db_csv():
     with open('Touchscreen.csv', 'rb') as f:
         ts_data = pd.read_csv(f, usecols=['f.eid', 'f.2976.0.0', 'f.2976.1.0', 'f.2976.2.0',
-                                          'f.2976.3.0', 'f.20126.0.0', ], sep=',', low_memory=False)
+                                          'f.2976.3.0', 'f.20126.0.0', 'f.1558.2.0', 'f.1558.3.0'], sep=',',
+                              low_memory=False)
     # export to csv
-    ts_data.to_csv('unfiltered_mdd_db.csv', index=False)
-    return 'unfiltered_mdd_db.csv created'
+    ts_data.to_csv('unfiltered_mdd_db_ac.csv', index=False)
+    return 'unfiltered_mdd_db_ac.csv created'
 
 
-def filter_na_data(unfiltered_file='unfiltered_mdd_db_age.csv'):
-    # remove f.20126.0.0 if it is nan  20126: Depression
-    with open(unfiltered_file, 'rb') as f:
-        data = pd.read_csv(f, sep=',', low_memory=False)
-    data = data[data['f.20126.0.0'].notna()]
-    print(f'length of filtered_data from non-nan MDD {len(data)}')
-    #  filter out f.21003._.0 (age) if it is nan
-    data = data[data['f.21003.2.0'].notna() | data[
-        'f.21003.3.0'].notna()]  # 21003: Age when attended assessment centre
-    print(f'length of filtered_data from non-nan age {len(data)}')
-    # filter out diabetes data if all 4 columns are nan (f.2976._.0)    2976: Age diabetes diagnosed
-    data = data[data['f.2976.2.0'].isna() & data['f.2976.3.0'].isna()]
-    # data = data[data['f.2976.2.0'].notna() | data['f.2976.3.0'].notna()]
-    # print(f'length of filtered_data from non-nan DB  {len(data)}')
-    data = data[
-        (data['f.2976.0.0'] >= 1) | (data['f.2976.1.0'] >= 1) | (data['f.2976.2.0'] >= 1) | (data['f.2976.3.0'] >= 1)]
-    print(f'length of filtered_data from non-nan DB  {len(data)}')
-    data.to_csv('filtered_mdd_db_age.csv', index=False)
-    print('filtered_mdd_db_age.csv created')
-    return data
+#
+# def filter_na_data(unfiltered_file='unfiltered_mdd_db_age.csv'):
+#     # remove f.20126.0.0 if it is nan  20126: Depression
+#     with open(unfiltered_file, 'rb') as f:
+#         data = pd.read_csv(f, sep=',', low_memory=False)
+#     data = data[data['f.20126.0.0'].notna()]
+#     print(f'length of filtered_data from non-nan MDD {len(data)}')
+#     #  filter out f.21003._.0 (age) if it is nan
+#     data = data[data['f.21003.2.0'].notna() | data[
+#         'f.21003.3.0'].notna()]  # 21003: Age when attended assessment centre
+#     print(f'length of filtered_data from non-nan age {len(data)}')
+#     # filter out diabetes data if all 4 columns are nan (f.2976._.0)    2976: Age diabetes diagnosed
+#     data = data[data['f.2976.2.0'].isna() & data['f.2976.3.0'].isna()]
+#     # data = data[data['f.2976.2.0'].notna() | data['f.2976.3.0'].notna()]
+#     # print(f'length of filtered_data from non-nan DB  {len(data)}')
+#     data = data[
+#         (data['f.2976.0.0'] >= 1) | (data['f.2976.1.0'] >= 1) | (data['f.2976.2.0'] >= 1) | (data['f.2976.3.0'] >= 1)]
+#     print(f'length of filtered_data from non-nan DB  {len(data)}')
+#     data.to_csv('filtered_mdd_db_age.csv', index=False)
+#     print('filtered_mdd_db_age.csv created')
+#     return data
 
 
 def create_filter_file_mdd():
@@ -318,14 +318,79 @@ def create_filter_file_db():
 
     assert len(data[data['db'] == 1]) == len(
         db), f"length of data[data['db'] == 1] {len(data[data['db'] == 1])}db {len(db)}"
-    # chceck with yunfei's data
+
+
+# chceck with yunfei's data
+
+
+def drinking_status(row):
+    less_drinking_choices = ["Special occasions only", "Never", "Once or twice a week"]
+    heavy_drinking_choices = ["Daily or almost daily ", "Three or four times a week"]
+    if row['f.1558.2.0'] in less_drinking_choices and row['f.1558.3.0'] in less_drinking_choices:
+        return 0
+    elif row['f.1558.2.0'] in heavy_drinking_choices and row['f.1558.3.0'] in heavy_drinking_choices:
+        return 1
+    else:
+        return np.nan
+
+
+def check_mdd_ac_status(row):
+    if row['depression'] == 0 and row['heavy_drinker'] == 0:
+        return 0
+    elif row['depression'] == 1 and row['heavy_drinker'] == 0:
+        return 1
+    elif row['depression'] == 0 and row['heavy_drinker'] == 1:
+        return 2
+    elif row['depression'] == 1 and row['heavy_drinker'] == 1:
+        return 3
+    else:
+        return np.nan
+
+
+def create_filter_file_alcohol():
+    curr_df = create_cached_t1_filenames(create_csv=False)
+    print(f'current path {os.getcwd()}')
+    filtered_df = pd.read_csv('unfiltered_mdd_db_ac.csv', sep=',')
+    filtered_df = filtered_df.rename(columns={'f.eid': 'subjectID'})
+    # print('start merge with curr_df for mdd + db')
+    filtered_df = pd.merge(curr_df, filtered_df, on='subjectID', how='inner')
+    # print('start add age info for mdd + db')
+    filtered_df = add_age_info(filtered_df, create_csv=True, name='unfiltered_mdd_db_ac.csv')
+    # data = filter_na_data('unfiltered_mdd_db_age.csv')
+    data = filtered_df
+
+    data['depression'] = data['f.20126.0.0'].apply(lambda x: 1 if x in ['Probable Recurrent major depression (severe)',
+                                                                        'Probable Recurrent major depression (moderate)',
+                                                                        'Single Probable major depression episode']
+    else 0 if x == 'No Bipolar or Depression'
+    else np.nan)
+    data['heavy_drinker'] = data.apply(drinking_status, axis=1)
+
+    # df_ac_dp = data.dropna(subset=['depression', 'heavy_drinker'])
+    df_ac_dp = data
+    # create label that is 1 if both depression and heavy drinker
+    df_ac_dp['mdd_ac_label'] = df_ac_dp.apply(check_mdd_ac_status, axis=1)
+
+    df_ac_dp.to_csv('filtered_mdd_ac_age.csv', index=False)
+
+    print(f'length of all nan- mdd and ac data {len(df_ac_dp)}')
+
+    print(f'length of healthy {len(df_ac_dp[df_ac_dp["mdd_ac_label"] == 0])}')
+    print(f'length of mdd {len(df_ac_dp[df_ac_dp["mdd_ac_label"] == 1])}')
+    print(f'length of ac {len(df_ac_dp[df_ac_dp["mdd_ac_label"] == 2])}')
+    print(f'length of mdd and ac {len(df_ac_dp[df_ac_dp["mdd_ac_label"] == 3])}')
+
+    # assert len(df_ac_dp[df_ac_dp['mdd_ac_label'] == 0]) == len(
+    #     db), f"length of data[data['db'] == 1] {len(data[data['db'] == 1])}db {len(db)}"
 
 
 if __name__ == '__main__':
     curr_df = create_cached_t1_filenames(create_csv=False)
-    # filtered_df = filter_depression(curr_df=curr_df, create_csv=True)
-    # filtered_df = filter_diabetes(curr_df=filtered_df, create_csv=True)
-    #
     # create_unfiltered_mdd_db_csv()
-    # create_filter_file_mdd()
-    create_filter_file_db()
+    create_filter_file_salcohol()
+# filtered_df = filter_depression(curr_df=curr_df, create_csv=True)
+# filtered_df = filter_diabetes(curr_df=filtered_df, create_csv=True)
+#
+# create_unfiltered_mdd_db_csv()
+# create_filter_file_mdd()
+# create_filter_file_db()

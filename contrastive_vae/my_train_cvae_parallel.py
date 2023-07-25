@@ -14,15 +14,16 @@ from torch.nn.parallel import DataParallel
 HOME = os.environ['HOME']
 root_dir = f'{HOME}/GenScotDepression/data/ukb/imaging/raw/t1_structural_nifti_20252'
 # csv_file = './../data/filtered_mdd_db_age.csv'
-csv_file = f'./../brain_age_info_retrained_sfcn_bc_filtered.csv'
+# csv_file = f'./../brain_age_info_retrained_sfcn_bc_filtered.csv'
+csv_file = 'brain_age_info_retrained_sfcn_4label_mdd_ac_bc_masked_filtered.csv'
 # current time in ddmm_hhmm format
 now = datetime.datetime.now()
 time_str = now.strftime("%d%m_%H%M")
-fname = f'AdamW-withLRS-sigmoid{time_str}'
-writer = SummaryWriter(f'runs/cvae_32d_{time_str}')
+fname = f'AdamW-withLRS-sigmoid-cvae_32d_mdd_ac-{time_str}'
+writer = SummaryWriter(f'runs/cvae_32d_mdd_ac_{time_str}')
 torch.cuda.empty_cache()
 device = torch.device("cuda:2")
-device_ids = [2, 5, ]
+device_ids = [4, 5, ]
 learning_rate = 0.001
 epochs = 100
 batch_size = 4  # from 32 # NOTE: Using the batch size must be divisible by (the number of GPUs * 2) # see
@@ -31,7 +32,7 @@ batch_size = 4  # from 32 # NOTE: Using the batch size must be divisible by (the
 input_dim = (1, 64, 64, 64)  # 784 = (1, 160, 192, 160)
 intermediate_dim = 128  # 256
 latent_dim = 32
-beta = 0.01  # 1
+beta = 0.1  # 1
 disentangle = True
 gamma = 1.  # 5
 model = ContrastiveVAE(input_dim, intermediate_dim, latent_dim, beta, disentangle, gamma)
@@ -145,10 +146,7 @@ for epoch in range(epochs):
     writer.flush()
     running_vloss = 0.0
     num_val_batches = 0
-    tg_z_means = []
-    bg_z_means = []
-    tg_z_mean_total = []
-    bg_z_mean_total = []
+    tg_z_total, bg_z_total, tg_z_mean_total, bg_z_mean_total, tg_labels_total, bg_labels_total = [], [], [], [], [], []
     with torch.no_grad():
         disentangle = False
         model.eval()
@@ -157,6 +155,8 @@ for epoch in range(epochs):
                 continue
             tg_inputs = batch[0]['image_data'].to(dtype=torch.float32, device=device)
             bg_inputs = batch[1]['image_data'].to(dtype=torch.float32, device=device)
+            tg_labels = batch[0]['mdd_ac_status'].to(dtype=torch.float32, device=device)
+            bg_labels = batch[1]['mdd_ac_status'].to(dtype=torch.float32, device=device)
             # assert tg_inputs.device == min.device == device, f'device mismatch{tg_inputs.device}, {min.device}'
             # tg_inputs = (tg_inputs - min) / diff
             # bg_inputs = (bg_inputs - min) / diff
@@ -171,11 +171,17 @@ for epoch in range(epochs):
             num_val_batches += 1
             # tg_z_total.append(tg_z.detach().cpu().reshape(-1, 2))
             # bg_z_total.append(bg_z.detach().cpu().reshape(-1, 2))
-            tg_z_mean_total.append(tg_z_mean.cpu().reshape(-1, 2))
-            bg_z_mean_total.append(bg_z_mean.cpu().reshape(-1, 2))
+            tg_z_mean_total.append(tg_z_mean.cpu().reshape(-1, 16))
+            bg_z_mean_total.append(bg_z_mean.cpu().reshape(-1, 16))
+            tg_labels_total.append(tg_labels.cpu().reshape(-1, 1))
+            bg_labels_total.append(bg_labels.cpu().reshape(-1, 1))
     tg_z_mean_total = np.concatenate(tg_z_mean_total, axis=0)
     bg_z_mean_total = np.concatenate(bg_z_mean_total, axis=0)
-    plot_32d_latent_space(tg_z_mean_total, bg_z_mean_total, name=fname, epoch=epoch)
+    tg_labels_total = np.concatenate(tg_labels_total, axis=0)
+    bg_labels_total = np.concatenate(bg_labels_total, axis=0)
+
+    plot_32d_latent_space(tg_z_mean_total, bg_z_mean_total, tg_label=tg_labels_total, bg_label=tg_labels_total,
+                          name=fname, epoch=epoch)
 
     avg_val_loss = running_vloss / num_val_batches  # average validation loss
     print(f'Epoch: {epoch + 1}/{epochs}, Validation Loss: {avg_val_loss:.4f}')

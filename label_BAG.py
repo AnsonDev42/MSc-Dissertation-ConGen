@@ -276,16 +276,13 @@ def label_data_batch_my_model(need_db=False):
     # load the dataset
     HOME = os.environ['HOME']
     root_dir = f'{HOME}/GenScotDepression/data/ukb/imaging/raw/t1_structural_nifti_20252'
-    if need_db:
-        csv_file = 'data/filtered_mdd_db_age_DB.csv'
-    else:
-        csv_file = 'data/filtered_mdd_db_age.csv'
+    csv_file = 'data/filtered_mdd_ac_age.csv'
     eval_dataset = DataStoreDataset(root_dir, csv_file, )
     eval_dataset.load_data_info(root_dir, csv_file, filter_func=None)
     dataloader = DataLoader(eval_dataset, batch_size=1, shuffle=False, collate_fn=custom_collate_fn)
 
     # using pd create a dataframe
-    df = pd.DataFrame(columns=['study', 'filename', 'age', 'brain_age', 'MDD_status', 'db'])
+    df = pd.DataFrame(columns=['study', 'filename', 'age', 'brain_age', 'MDD_status', 'mdd_ac_status', ])
     with torch.no_grad():
         for i, batch in enumerate(dataloader):
             if batch is None or 'image_data' not in batch.keys():
@@ -304,7 +301,7 @@ def label_data_batch_my_model(need_db=False):
             study = batch['study'][0]
             age = int(batch['age'].item())
             if need_db:
-                db = int(batch['db'][0])
+                mdd_ac_status = int(batch['mdd_ac_status'][0])
 
             output = sfcn.module(inputs)
 
@@ -328,13 +325,13 @@ def label_data_batch_my_model(need_db=False):
                     f"study: {study}, filename: {filename}, age: {age}, brain age: {pred}, MDD_status: {mdd_status}")
             else:
                 print(
-                    f"study: {study}, filename: {filename}, age: {age}, brain age: {pred}, MDD_status: {mdd_status}, db: {db}")
-                new_row['db'] = db
+                    f"study: {study}, filename: {filename}, age: {age}, brain age: {pred}, MDD_status: {mdd_status}, mdd_ac_status: {mdd_ac_status}")
+                new_row['mdd_ac_status'] = mdd_ac_status
             df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
     # add 'depression' column as the same as 'MDD_status'
     df['depression'] = df['MDD_status']
     if need_db:
-        df.to_csv('brain_age_info_retrained_sfcn_db.csv')
+        df.to_csv('brain_age_info_retrained_sfcn_4label_mdd_ac.csv')
     else:
         df.to_csv('brain_age_info_retrained_sfcn_ttt.csv')
 
@@ -356,30 +353,3 @@ if __name__ == '__main__':
 
     label_data_batch_my_model(need_db=True)
     exit(0)
-    import csv
-
-    # Load the CSV file
-    with open('brain_age_info_backup.csv', 'r') as f:
-        reader = csv.reader(f)
-        next(reader)  # Skip the header
-        rows = list(reader)
-
-    # Rewrite the CSV file
-    with open('brain_age_info_clean.csv', 'w', newline='') as f:
-        writer = csv.writer(f)
-        writer.writerow(['study', 'filename', 'age', 'brain_age', 'MDD_status'])  # Write the header
-        for row in rows:
-            study = row[0].replace("[", "").replace("]", "").replace("'", "")
-            filename = row[1].replace("[", "").replace("]", "").replace("'", "")
-            age = int(row[2].replace("tensor(", "").replace(")", "").replace("[", "").replace("]", ""))
-            brain_age = float(row[3])
-            MDD_status = row[4].replace("tensor(", "").replace(")", "").replace("[", "").replace("]", "").replace(".",
-                                                                                                                  "").replace(
-                " ", "").replace(",dtype=torchfloat64", "")
-            if MDD_status == 'nan':
-                MDD_status = 'nan'
-            else:
-                MDD_status = int(MDD_status)
-
-            # Write the modified row back to the CSV
-            writer.writerow([study, filename, age, brain_age, MDD_status])
