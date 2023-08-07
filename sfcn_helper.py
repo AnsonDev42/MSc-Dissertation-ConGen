@@ -95,7 +95,6 @@ def bias_correction(y: np.ndarray, y_pred: np.ndarray):
     y_pred_unbiased = (y_pred - intercept) / (slope + np.finfo(np.float32).eps)  # avoid division by 0
     # plot y chronological age vs y_pred_unbiased and the least square fit using the intercept and slope
     plt.scatter(y, y_pred_unbiased)
-    plt.plot(y, y_pred_unbiased, )
     plt.xlabel('Chronological age')
     plt.ylabel('Brain age unbiased')
     plt.title('bias correction')
@@ -124,8 +123,11 @@ def bias_correction_writer(f='brain_age_info.csv', fw='brain_age_info_bc.csv'):
     # load  brain_age_info_clean.csv in pandas , where age is y, brain_age is y hat.
     # f = 'brain_age_info_retrained_sfcn.csv'
     df = pd.read_csv(f, index_col=0)
+    before_len = len(df)
     df = df[df['brain_age'].notna()]
-    df_hc = df[df['MDD_status'] == 0.0]  # filter out MDD patients
+    after_len = len(df)
+    print(f'before and after and diff:{before_len},{after_len},{before_len - after_len}')
+    df_hc = df[df['mdd_ac_status'] == 0.0]  # filter out MDD patients
     y_pred_hc = df_hc['brain_age'].to_numpy()
     y_actual_hc = df_hc['age'].to_numpy()
     print(f'y_pred{y_pred_hc}')
@@ -161,6 +163,6 @@ def bias_correction_writer(f='brain_age_info.csv', fw='brain_age_info_bc.csv'):
 
 
 if __name__ == '__main__':
-    bias_correction_writer('brain_age_info_retrained_sfcn_4label_mdd_ac.csv',
-                           'brain_age_info_retrained_sfcn_4label_mdd_ac_bc.csv')
+    bias_correction_writer('brain_age_info_retrained_sfcn_4label_mdd_ac_1.csv',
+                           'brain_age_info_retrained_sfcn_4label_mdd_ac_bc_1.csv')
     ...

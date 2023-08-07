@@ -270,13 +270,13 @@ def label_writer_batch(filename='brain_age_info.csv', gpu=True):
 
 
 def label_data_batch_my_model(need_db=False):
-    gpu = 'cuda:1' if torch.cuda.is_available() else 'cpu'
+    gpu = 'cuda:3' if torch.cuda.is_available() else 'cpu'
     device = torch.device(gpu)
     sfcn = sfcn_loader(gpu=gpu, eval=True, weights='best_model_1107_2346.pth')
     # load the dataset
     HOME = os.environ['HOME']
     root_dir = f'{HOME}/GenScotDepression/data/ukb/imaging/raw/t1_structural_nifti_20252'
-    csv_file = 'data/filtered_mdd_ac_age.csv'
+    csv_file = 'data/filtered_mdd_ac_age_1.csv'
     eval_dataset = DataStoreDataset(root_dir, csv_file, )
     eval_dataset.load_data_info(root_dir, csv_file, filter_func=None)
     dataloader = DataLoader(eval_dataset, batch_size=1, shuffle=False, collate_fn=custom_collate_fn)
@@ -331,7 +331,7 @@ def label_data_batch_my_model(need_db=False):
     # add 'depression' column as the same as 'MDD_status'
     df['depression'] = df['MDD_status']
     if need_db:
-        df.to_csv('brain_age_info_retrained_sfcn_4label_mdd_ac.csv')
+        df.to_csv('brain_age_info_retrained_sfcn_4label_mdd_ac_1.csv')
     else:
         df.to_csv('brain_age_info_retrained_sfcn_ttt.csv')
 

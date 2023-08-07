@@ -181,6 +181,7 @@ class DataStoreDataset(CustomDataset):
         data = skt.resize(data, (64, 64, 64), order=1, preserve_range=True, anti_aliasing=True)
         data = data.reshape([1, 64, 64, 64])
         # for cvae ends #
+
         # if self.max_min:
         #     data = torch.tensor(data)
         #     data = (data - self.min) / self.diff

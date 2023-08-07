@@ -55,13 +55,15 @@ def train_sfcn():
     epochs = 100
     weight_decay = 0.001
     batch_size = 8  # adjust as the paper
+    transform = torchvision.transforms.RandomVerticalFlip(p=0.5)
 
     # Instantiate the CustomDataset class
-    healthy_dataset = DataStoreDataset(root_dir, csv_file, on_the_fly=False)
+    healthy_dataset = DataStoreDataset(root_dir, csv_file, on_the_fly=False, transform=transform)
     healthy_dataset.load_data_info(root_dir, csv_file, filter_func=filter_healthy)
     # split to train and test
     train_size = int(0.8 * len(healthy_dataset))
     val_size = len(healthy_dataset) - train_size
+
     train_dataset, test_dataset = torch.utils.data.random_split(healthy_dataset, [train_size, val_size])
     dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, collate_fn=custom_collate_fn,
                             num_workers=8)
