@@ -10,7 +10,7 @@ import numpy as np
 from torch.utils.tensorboard import SummaryWriter
 
 from my_vae_utils import plot_latent_space, plot_32d_latent_space
-from my_vae_utils import ContrastiveVAE, cvae_loss, vae_loss
+from my_vae_utils import ContrastiveVAE, cvae_loss, vae_loss, VAE
 from dataloader import DataStoreDataset, filter_healthy, filter_depressed, custom_collate_fn
 from torch.nn.parallel import DataParallel
 from ray import tune
@@ -27,11 +27,11 @@ csv_file = './../brain_age_info_retrained_sfcn_4label_mdd_ac_bc_masked_filtered_
 
 def train_single(config):
     time_str = config['time_str']
-    fname = f'CVAE_mdd_ac_64_DC-{time_str}'
-    writer = SummaryWriter(f'runs/cvae_32d_mdd_ac_mega{time_str}')
+    fname = f'VAE_mdd_ac_64_DC-{time_str}'
+    writer = SummaryWriter(f'runs/vae_32d_mdd_ac_mega{time_str}')
 
-    device = torch.device("cuda:2")
-    device_ids = [2]
+    device = torch.device("cuda:5")
+    device_ids = [5]
     learning_rate = config['lr']  # 0.0001
     epochs = 100
     batch_size = config[
@@ -45,7 +45,7 @@ def train_single(config):
     disentangle = True
     gamma = config['gamma']  # 1.  # 5 WITH TC loss
     recon_alpha = config['recon_alpha']
-    model = ContrastiveVAE(input_dim, intermediate_dim, latent_dim, beta, disentangle, gamma)
+    model = VAE(input_dim, intermediate_dim, latent_dim, beta, disentangle, gamma)
     print(
         f'Model configuration: latent_dim={latent_dim}, beta={beta}, gamma={gamma},recon_alpha={recon_alpha}，time_str={time_str}')
     model = nn.DataParallel(model, device_ids=device_ids)
@@ -150,16 +150,6 @@ def train_single(config):
         running_q, running_q_bar = 0.0, 0.0
         last_loss = 0.0
         num_batches = 0
-        # train_discriminator = epoch % 2 == 1
-        # # freeze discriminator when training generator and vice versa
-        # for param in model.module.parameters():
-        #     param.requires_grad = not train_discriminator
-        # for param in model.module.discriminator.parameters():
-        #     param.requires_grad = train_discriminator
-        # if train_discriminator:
-        #     optimizer = optimizer_discriminator
-        # else:
-        #     optimizer = optimizer_model
         optimizer = optimizer_model
 
         for i, batch in enumerate(zip(tg_train_loader, bg_train_loader)):
@@ -168,59 +158,37 @@ def train_single(config):
                 continue
             tg_inputs = batch[0]['image_data'].to(dtype=torch.float32)
             bg_inputs = batch[1]['image_data'].to(dtype=torch.float32)
-            output = model(tg_inputs, bg_inputs)
+            # combine tg_inputs with bg_inputs
+            tg_inputs = torch.cat((tg_inputs, bg_inputs), dim=0)
+            output = model(tg_inputs)
             tg_outputs, bg_outputs, \
                 tg_z_mean, tg_z_log_var, \
-                tg_s_mean, tg_s_log_var, \
-                bg_z_mean, bg_z_log_var, \
-                tc_loss, discriminator_loss, _, _, q_score, q_bar_score, q, q_bar = output
+                tg_z = output
 
-            q_pred = (q_score > 0.5).float()
-            correct_q = (q_pred == 1).sum().item()
-            q_bar_pred = (q_bar_score > 0.5).float()
-            correct_q_bar = (q_bar_pred == 0).sum().item()
-            recon, beta_kl, dis, gamma_tc = cvae_loss(input_dim, tg_inputs, bg_inputs, tg_outputs, bg_outputs,
-                                                      tg_z_mean, tg_z_log_var,
-                                                      tg_s_mean, tg_s_log_var, bg_z_mean, bg_z_log_var, beta,
-                                                      disentangle, gamma,
-                                                      tc_loss, discriminator_loss, recon_alpha)
-            loss = recon + beta_kl + dis + gamma_tc
+            recon, beta_kl = vae_loss(input_dim,
+                                      tg_inputs, bg_inputs, tg_outputs, bg_outputs,
+                                      tg_z_mean, tg_z_log_var,
+                                      beta=beta,
+                                      # tg_s_mean, tg_s_log_var,
+                                      # bg_z_mean, bg_z_log_var,beta=1.0,
+                                      disentangle=True, recon_alpha=recon_alpha)
+            loss = recon + beta_kl
             loss.backward()
             torch.cuda.empty_cache()
             optimizer.step()
             running_loss += loss.item()
             running_recon_loss += recon.item()
             running_beta_kl_loss += beta_kl.item()
-            running_dis_loss += dis.item()
-            running_gamma_tc_loss += gamma_tc.item()
-
-            running_q += q_score.sum().item()
-            running_q_bar += q_bar_score.sum().item()
-            running_q_score += correct_q
-            running_q_bar_score += correct_q_bar
 
             num_batches += 1
             if i % 1 == 0:
                 last_loss = running_loss / num_batches
                 last_recon = running_recon_loss / num_batches
                 last_beta_kl = running_beta_kl_loss / num_batches
-                last_dis = running_dis_loss / num_batches
-                last_gamma_tc = running_gamma_tc_loss / num_batches
-                # print('  batch {} loss: {}'.format(i + 1, last_loss))
-                last_q_score = running_q_score / num_batches / len(q_pred)
-                last_q_bar_score = running_q_bar_score / num_batches / len(q_pred)
-                last_q = running_q / num_batches / len(q_pred)
-                last_q_bar = running_q_bar / num_batches / len(q_pred)
                 tb_x = epoch_number * len(tg_train_loader) + i + 1
                 writer.add_scalar('Loss/train', last_loss, tb_x)
                 writer.add_scalar('Recon_loss/train', last_recon, tb_x)
                 writer.add_scalar('Beta_KL_loss/train', last_beta_kl, tb_x)
-                writer.add_scalar('Discrinination/train', last_dis, tb_x)
-                writer.add_scalar('Gamma_TC_loss/train', last_gamma_tc, tb_x)
-                writer.add_scalar('Q_score/train', last_q, tb_x)
-                writer.add_scalar('Q_bar_score/train', last_q_bar, tb_x)
-                writer.add_scalar('Q_score accuracy/train', last_q_score, tb_x)
-                writer.add_scalar('Q_bar_score accuracy/train', last_q_bar_score, tb_x)
                 writer.flush()
         # Print statistics
         avg_epoch_loss = running_loss / num_batches
@@ -228,21 +196,11 @@ def train_single(config):
         avg_epoch_beta_kl = running_beta_kl_loss / num_batches
         avg_epoch_dis = running_dis_loss / num_batches
         avg_epoch_gamma_tc = running_gamma_tc_loss / num_batches
-        avg_epoch_q_score = running_q_score / num_batches / len(q_pred)
-        avg_epoch_q_bar_score = running_q_bar_score / num_batches / len(q_pred)
-        avg_epoch_q_bar = running_q_bar / num_batches / len(q_pred)
-        avg_epoch_q = running_q / num_batches / len(q_pred)
         print(
-            f'Epoch: {epoch + 1}/{epochs}, Loss: {avg_epoch_loss:.4f}, Recon: {avg_epoch_recon:.4f}, KL: {avg_epoch_beta_kl:.4f}, Dis: {avg_epoch_dis:.4f}, TC: {avg_epoch_gamma_tc:.4f}, Q_score: {avg_epoch_q_score:.4f}, Q_bar_score: {avg_epoch_q_bar_score:.4f}')
+            f'Epoch: {epoch + 1}/{epochs}, Loss: {avg_epoch_loss:.4f}, Recon: {avg_epoch_recon:.4f}, KL: {avg_epoch_beta_kl:.4f}')
         writer.add_scalars('total loss', {'train': avg_epoch_loss, }, epoch)
         writer.add_scalars('Recon_loss', {'train': avg_epoch_recon, }, epoch)
         writer.add_scalars('Beta_KL_loss', {'train': avg_epoch_beta_kl, }, epoch)
-        writer.add_scalars('Discrinination', {'train': avg_epoch_dis, }, epoch)
-        writer.add_scalars('Gamma_TC_loss', {'train': avg_epoch_gamma_tc, }, epoch)
-        writer.add_scalars('Q_and_q_bar', {'train_q': avg_epoch_q,
-                                           'train_q_bar': avg_epoch_q_bar}, epoch)
-        writer.add_scalars('Q_and_q_bar_accuracy', {'train_q_acc': avg_epoch_q_score,
-                                                    'train_q_bar_acc': avg_epoch_q_bar_score}, epoch)
         writer.flush()
         running_vloss = 0.0
         running_vrecon, running_vbeta_kl, running_vdis, running_vgamma_tc = 0.0, 0.0, 0.0, 0.0
@@ -265,99 +223,67 @@ def train_single(config):
                 # assert tg_inputs.device == min.device == device, f'device mismatch{tg_inputs.device}, {min.device}'
                 # tg_inputs = (tg_inputs - min) / diff
                 # bg_inputs = (bg_inputs - min) / diff
-                output = model(tg_inputs, bg_inputs)
+                tg_inputs = torch.cat((tg_inputs, bg_inputs), dim=0)
+                output = model(tg_inputs)
                 tg_outputs, bg_outputs, \
                     tg_z_mean, tg_z_log_var, \
-                    tg_s_mean, tg_s_log_var, \
-                    bg_z_mean, bg_z_log_var, \
-                    tc_loss, discriminator_loss, _, _, q_score, q_bar_score, zz, ss = output
-                running_v.append(q_score.cpu().numpy())
-                running_v_bar.append(q_bar_score.cpu().numpy())
+                    tg_z = output
 
-                q_pred = (q_score > 0.5).float()
-                correct_q = (q_pred == 1).sum().item()
-                q_bar_pred = (q_bar_score > 0.5).float()
-                correct_q_bar = (q_bar_pred == 0).sum().item()
-                recon, beta_kl, dis, gamma_tc = cvae_loss(input_dim, tg_inputs, bg_inputs, tg_outputs, bg_outputs,
-                                                          tg_z_mean, tg_z_log_var,
-                                                          tg_s_mean, tg_s_log_var, bg_z_mean, bg_z_log_var, beta,
-                                                          disentangle, gamma,
-                                                          tc_loss, discriminator_loss, recon_alpha)
-                loss = recon + beta_kl + dis + gamma_tc
+                recon, beta_kl = vae_loss(input_dim,
+                                          tg_inputs, bg_inputs, tg_outputs, bg_outputs,
+                                          tg_z_mean, tg_z_log_var,
+                                          beta=beta,
+                                          # tg_s_mean, tg_s_log_var,
+                                          # bg_z_mean, bg_z_log_var,beta=1.0,
+                                          disentangle=True, recon_alpha=recon_alpha)
+                loss = recon + beta_kl
                 running_vloss += loss.item()
                 running_vrecon += recon.item()
                 running_vbeta_kl += beta_kl.item()
-                running_vdis += dis.item()
-                running_vgamma_tc += gamma_tc.item()
-                running_vq_score += correct_q
-                running_vq_bar_score += correct_q_bar
-                running_vq += q_score.sum()
-                running_vq_bar += q_bar_score.sum()
+                # running_vdis += dis.item()
+                # running_vgamma_tc += gamma_tc.item()
 
                 num_val_batches += 1
                 # tg_z_total.append(tg_z.detach().cpu().reshape(-1, 2))
                 # bg_z_total.append(bg_z.detach().cpu().reshape(-1, 2))
                 tg_z_mean_total.append(tg_z_mean.cpu().reshape(-1, 32))
-                bg_z_mean_total.append(bg_z_mean.cpu().reshape(-1, 32))
                 tg_labels_total.append(tg_labels.cpu().reshape(-1, 1))
                 bg_labels_total.append(bg_labels.cpu().reshape(-1, 1))
-                zz_total.append(zz)
-                ss_total.append(ss)
+                zz_total.append(tg_z_mean.cpu())
         tg_z_mean_total = np.concatenate(tg_z_mean_total, axis=0)
-        bg_z_mean_total = np.concatenate(bg_z_mean_total, axis=0)
         tg_labels_total = np.concatenate(tg_labels_total, axis=0)
         bg_labels_total = np.concatenate(bg_labels_total, axis=0)
         zz_total = torch.cat(zz_total)
-        ss_total = torch.cat(ss_total)
         # save zz_total and ss_total to file
         # create folder
-        if not os.path.exists(f'cvae_d_debug/{time_str}_cvae'):
-            os.makedirs(f'cvae_d_debug/{time_str}_cvae')
-        fname = f'cvae_d_debug/{time_str}_cvae/epoch_{epoch}_z_s.npz'
-        np.savez_compressed(fname, zz=zz_total.cpu().numpy(), ss=ss_total.cpu().numpy())
+        if not os.path.exists(f'cvae_d_debug/{time_str}_vae'):
+            os.makedirs(f'cvae_d_debug/{time_str}_vae')
+        fname = f'cvae_d_debug/{time_str}_vae/epoch_{epoch}_z_s.npz'
+        np.savez_compressed(fname, zz=tg_z_mean_total.cpu().numpy(), ss=ss_total.cpu().numpy())
 
         ss = plot_32d_latent_space(tg_z_mean_total, bg_z_mean_total, tg_label=tg_labels_total, bg_label=bg_labels_total,
-                                   name=fname, epoch=epoch)
+                                   name=fname, epoch=epoch, VAE=True)
 
         avg_val_loss = running_vloss / num_val_batches  # average validation loss
         avg_val_recon = running_vrecon / num_val_batches
         avg_val_beta_kl = running_vbeta_kl / num_val_batches
-        avg_val_dis = running_vdis / num_val_batches
-        avg_val_gamma_tc = running_vgamma_tc / num_val_batches
-        avg_val_q_score = running_vq_score / num_val_batches / len(q_pred)
-        avg_val_q_bar_score = running_vq_bar_score / num_val_batches / len(q_bar_pred)
-        avg_val_q = running_vq / num_val_batches / len(q_score)
-        avg_val_q_bar = running_vq_bar / num_val_batches / len(q_bar_score)
         print(
             f'Epoch: {epoch + 1}/{epochs}, Validation Loss: {avg_val_loss:.4f},Recon Loss: {avg_val_recon:.4f}, KL Loss: {avg_val_beta_kl:.4f}, Discrimination Loss: {avg_val_dis:.4f}, Gamma TC Loss: {avg_val_gamma_tc:.4f}, q_score acc: {avg_val_q_score:.4f}, q_bar_score acc: {avg_val_q_bar_score:.4f}')
         writer.add_scalars('total loss', {'val': avg_val_loss, }, epoch)
         writer.add_scalars('Recon_loss', {'val': avg_val_recon, }, epoch)
         writer.add_scalars('Beta_KL_loss', {'val': avg_val_beta_kl, }, epoch)
-        writer.add_scalars('Discrinination', {'val': avg_val_dis, }, epoch)
-        writer.add_scalars('Gamma_TC_loss', {'val': avg_val_gamma_tc, }, epoch)
-        writer.add_scalars('silhouette score', {'val': ss, }, epoch)
-        writer.add_scalars('Q_and_q_bar', {'val_q': avg_val_q,
-                                           'val_q_bar': avg_val_q_bar}, epoch)
-        writer.add_scalars('Q_and_q_bar_accuracy', {'val_q_acc': avg_val_q_score,
-                                                    'val_q_bar_acc': avg_val_q_bar_score}, epoch)
-        writer.add_scalars('D avg acc', {'val': (avg_val_q_score + avg_val_q_bar_score) / 2, }, epoch)
         writer.add_scalars('Training vs. Validation Loss',
                            {'Training': avg_epoch_loss, 'Validation': avg_val_loss},
                            epoch_number + 1)
 
         writer.flush()
-        # tune.track.log(mean_accuracy=avg_val_loss)
-        # if train_discriminator:
-        #     scheduler_d.step()
-        # else:
-        #     scheduler.step()
         scheduler.step()
         # Check if this is the best model
         if avg_val_loss < best_loss:
             best_loss = avg_val_loss
             best_epoch = epoch_number
             best_model_state = deepcopy(model.state_dict())
-            torch.save(best_model_state, f'saved_models/best_cvae_model_{time_str}.pth')
+            torch.save(best_model_state, f'saved_models/best_vae_model_{time_str}.pth')
         elif epoch_number - best_epoch >= 12:  # 15
             print('Early stop for 12 epochs. Stopping training.')
             # torch.save(model.state_dict(), f'saved_models/cvae_model_early_stop_at_{epoch_number}_{time_str}.pth')
@@ -491,7 +417,7 @@ def test_single(config):
                                                       tg_s_mean, tg_s_log_var, bg_z_mean, bg_z_log_var, beta,
                                                       disentangle, gamma,
                                                       tc_loss, discriminator_loss, recon_alpha)
-            loss = recon + beta_kl + dis + gamma_tc
+            loss = recon + beta_kl
             running_vloss += loss.item()
             running_vrecon += recon.item()
             running_vbeta_kl += beta_kl.item()
@@ -550,7 +476,7 @@ def test_single(config):
     # writer.add_scalar('D avg acc/val', (avg_val_q_score + avg_val_q_bar_score) / 2, epoch)
 
     writer.flush()
-    print('Finished test CVAE')
+    print('Finished test VAE')
     writer.close()
 
 
@@ -565,17 +491,18 @@ def test_single(config):
 time_str = datetime.datetime.now().strftime("%d%m_%H%M")
 config = {"lr": 0.0005,
           "beta": 1,
-          "gamma": 0.01,
+          "gamma": 1,
           "recon_alpha": 100 / (64 ** 3),  # 64 ^ 3 / 4
           "d_lr": 0.0005,
           'batch_size': 64,
           'time_str': time_str,
-          'note': 'no iterative training, saved zz,ss discriminator = DenseLayers([2 * latent_dim, 1],seed0'}
+          'note': 'no iterative training, saved zz,ss discriminator = DenseLayers([2 * latent_dim, 1] THIS IS VAE， seed0'}
+print('this is VAE training!')
 # save the config to a new file'
-dir_name = 'cvae_config'
+dir_name = 'vae_config'
 if not os.path.exists(dir_name):
     os.makedirs(dir_name)
-with open(f'cvae_config/config_{time_str}.json', 'w') as fp:
+with open(f'vae_config/config_{time_str}.json', 'w') as fp:
     json.dump(config, fp)
 train_single(config)
 
@@ -586,7 +513,7 @@ exit()
 config['time_str'] = '1108_1050'
 time_str = config['time_str']
 # load config
-with open(f'cvae_config/config_{time_str}.json', 'r') as fp:
+with open(f'vae_config/config_{time_str}.json', 'r') as fp:
     config = json.load(fp)
 config['model_path'] = f'saved_models/best_cvae_model_{time_str}.pth'
 
