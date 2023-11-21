@@ -1,13 +1,13 @@
 # ConGeLe
 
-Neuroimaging Feature Extraction for Major Depressive Disorder Diagnosis using generative Contrastive Variational Autoencoder (CVAEs).
+Neuroimaging Feature Extraction for Major Depressive Disorders Diagnosis using Contrastive Variational Autoencoder (CVAE) via generative and contrastive learning.
 
 ## Repository Contents
 
 This repository contains:
 
 * Source code for the CVAE models and training scripts
-* ~~Sample datasets and preprocessing scripts~~
+* ~~Sample datasets and~~ preprocessing scripts
 * Results and analysis scripts
 * Visualization tools for model performance
 * Additional resources and reference materials
@@ -16,10 +16,6 @@ This repository contains:
 
 In order to run the code, make sure you have all the dependencies installed. Instructions for set-up and execution are available in the attached files with this document.
 
-## References
-
-The in-depth bibliography is available in the dissertation PDF document file.
-
 ## Abstract
 
 The objective of the dissertation was to tackle the challenge of diagnosing Major Depressive Disorder (MDD) using neuroimaging data. The study focuses on developing and evaluating a Convolutional Variational Autoencoder (CVAE) for feature extraction from brain scans, with an emphasis on identifying neuroimaging biomarkers associated with MDD.
@@ -27,7 +23,6 @@ The objective of the dissertation was to tackle the challenge of diagnosing Majo
 ## Introduction
 
 Major Depressive Disorder (MDD) is a common psychiatric ailment that can severely impact a person's quality of life. Current diagnostic methods largely rely on self-reported symptoms and clinical assessments, showing the need for objective and reliable diagnostic tools. Neuroimaging, particularly Magnetic Resonance Imaging (MRI), has the potential to aid in the diagnostic process by revealing patterns that are indicative of the disorder. This research project aims to advance the use of MRI in diagnosing MDD through deep learning approaches that can extract relevant features from complex brain imaging data.
-
 
 ## Methodology
 
@@ -56,6 +51,11 @@ Results include quantitative assessments of the extracted features' quality, wit
 ## Conclusion
 
 This dissertation contributes valuable insights into the feasibility and effectiveness of using deep learning for neuroimaging analysis in psychiatric diagnosis. Future work can expand on these findings to further refine the models and possibly integrate them into clinical workflows.
+
+
+## References
+
+The in-depth bibliography is available in the dissertation PDF document file.
 
 ## Acknowledgments
 
